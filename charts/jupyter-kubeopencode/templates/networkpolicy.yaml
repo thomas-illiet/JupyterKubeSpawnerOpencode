@@ -1,0 +1,113 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jko.name" . }}-mediator
+  namespace: {{ .Values.mediator.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "jko.name" . }}-mediator
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- range $workspace := .Values.workspaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $workspace.namespace }} }
+    {{- end }}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.jupyterHubNamespaceLabel }} }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.kubeOpenCodeNamespaceLabel }} }
+      ports:
+        - { protocol: TCP, port: 2746 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ .Values.networkPolicy.dnsNamespaceLabel }} }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    {{- if .Values.networkPolicy.apiServerCIDR }}
+    - to:
+        - ipBlock: { cidr: {{ .Values.networkPolicy.apiServerCIDR | quote }} }
+      ports:
+        - { protocol: TCP, port: 443 }
+    {{- else }}
+    # The Kubernetes API endpoint may be outside the pod network. Set an exact
+    # apiServerCIDR in production; this fallback keeps initial installs usable.
+    - ports:
+        - { protocol: TCP, port: 443 }
+    {{- end }}
+{{- range $workspace := .Values.workspaces }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jupyter-workspace-{{ $workspace.id | lower | replace "_" "-" }}
+  namespace: {{ $workspace.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: jupyter-workspace
+      mediator.kubeopencode.io/workspace-id: {{ $workspace.id | lower | replace "_" "-" | quote }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              mediator.kubeopencode.io/workspace-id: {{ $workspace.id | lower | replace "_" "-" | quote }}
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $.Values.networkPolicy.jupyterHubNamespaceLabel }} }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              mediator.kubeopencode.io/workspace-id: {{ $workspace.id | lower | replace "_" "-" | quote }}
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $.Values.mediator.namespace }} }
+      ports:
+        - { protocol: TCP, port: 8080 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $.Values.networkPolicy.dnsNamespaceLabel }} }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kubeopencode-agent-{{ $workspace.id | lower | replace "_" "-" }}
+  namespace: {{ $workspace.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kubeopencode-workspace-agent
+      mediator.kubeopencode.io/workspace-id: {{ $workspace.id | lower | replace "_" "-" | quote }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              mediator.kubeopencode.io/workspace-id: {{ $workspace.id | lower | replace "_" "-" | quote }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              mediator.kubeopencode.io/workspace-id: {{ $workspace.id | lower | replace "_" "-" | quote }}
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $.Values.networkPolicy.dnsNamespaceLabel }} }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $.Values.networkPolicy.modelGatewayNamespaceLabel }} }
+{{- end }}
+{{- end }}
+

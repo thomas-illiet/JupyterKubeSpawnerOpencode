@@ -1,0 +1,225 @@
+openapi: 3.1.0
+info:
+  title: Jupyter OpenCloud Mediator API
+  version: 0.1.0
+servers:
+  - url: http://kubeopencode-mediator.kubeopencode-system.svc.cluster.local:8080
+security:
+  - jupyterHubToken: []
+paths:
+  /healthz:
+    get:
+      security: []
+      summary: Process liveness and readiness
+      responses:
+        "200":
+          description: Mediator process is serving
+          content: { application/json: { schema: { type: object, properties: { status: { const: ok } } } } }
+  /api/v1/admin/users/{user}/resources:
+    delete:
+      summary: Delete mediator-owned resources for a deleted JupyterHub user
+      security:
+        - cleanupToken: []
+      parameters:
+        - { name: user, in: path, required: true, schema: { type: string, minLength: 1 } }
+      responses:
+        "204": { description: Resources deleted, or no configured workspace exists }
+        "401": { description: Cleanup token missing or invalid }
+        "503": { description: Kubernetes cleanup failed; deletion can be retried }
+  /api/v1/me/agents:
+    get:
+      summary: List the authenticated user's Agents for a workspace
+      responses:
+        "200": { description: Up to five credential-free Agent configurations, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AgentConfig" } } } } }
+    post:
+      summary: Create and provision an Agent using an allow-listed model
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AgentWrite" } } }
+      responses:
+        "201": { description: Agent created }
+        "409": { description: Duplicate id, active workspace, or five-Agent limit }
+  /api/v1/me/agents/{agent}:
+    get:
+      summary: Read one owned Agent configuration
+      parameters: [{ $ref: "#/components/parameters/Agent" }]
+      responses: { "200": { description: Agent configuration } }
+    put:
+      summary: Update one owned Agent configuration
+      parameters: [{ $ref: "#/components/parameters/Agent" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AgentWrite" } } }
+      responses: { "200": { description: Agent updated } }
+    delete:
+      summary: Delete a non-default owned Agent
+      parameters: [{ $ref: "#/components/parameters/Agent" }]
+      responses: { "204": { description: Agent deleted } }
+  /api/v1/me/agents/{agent}/status:
+    get:
+      summary: Read the owned Agent rollout readiness
+      parameters: [{ $ref: "#/components/parameters/Agent" }]
+      responses:
+        "200": { description: Readiness state, content: { application/json: { schema: { type: object, required: [ready], properties: { ready: { type: boolean } } } } } }
+        "404": { description: Agent absent or not owned by the authenticated user }
+  /api/v1/me/agents/{agent}/attach/{rest}:
+    get:
+      summary: Authenticated HTTP, SSE, and WebSocket relay to an owned Agent
+      parameters:
+        - { $ref: "#/components/parameters/Agent" }
+        - { name: rest, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Proxied Agent response or stream }
+        "101": { description: WebSocket protocol upgrade }
+  /api/v1/workspaces/{workspace}/tasks:
+    post:
+      summary: Snapshot a workspace and submit an isolated task
+      parameters:
+        - $ref: "#/components/parameters/Workspace"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [description]
+              properties:
+                description: { type: string, minLength: 1, maxLength: 32768 }
+      responses:
+        "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "404": { description: Workspace absent or not owned by the authenticated user }
+        "409": { description: Workspace already locked }
+  /api/v1/workspaces/{workspace}/activity:
+    post:
+      summary: Report a user save and cancel a conflicting active task
+      parameters:
+        - $ref: "#/components/parameters/Workspace"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [path]
+              properties: { path: { type: string } }
+      responses:
+        "204": { description: Activity recorded }
+  /api/v1/tasks/{task}:
+    get:
+      summary: Get an owned task
+      parameters:
+        - $ref: "#/components/parameters/Task"
+      responses:
+        "200": { description: Task state, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "404": { description: Task absent or not owned by the authenticated user }
+  /api/v1/tasks/{task}/events:
+    get:
+      summary: Stream task state as Server-Sent Events
+      parameters:
+        - $ref: "#/components/parameters/Task"
+      responses:
+        "200": { description: SSE stream, content: { text/event-stream: { schema: { type: string } } } }
+  /api/v1/tasks/{task}/output:
+    get:
+      summary: Read the owned task's OpenCode CLI output
+      parameters:
+        - $ref: "#/components/parameters/Task"
+      responses:
+        "200": { description: Current CLI output, content: { text/plain: { schema: { type: string, maxLength: 1048576 } } } }
+        "404": { description: Task absent or not owned by the authenticated user }
+        "503": { description: Task output temporarily unavailable }
+  /api/v1/tasks/{task}/cancel:
+    post:
+      summary: Request cancellation
+      parameters:
+        - $ref: "#/components/parameters/Task"
+      responses:
+        "202": { description: Cancellation requested, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+  /api/v1/tasks/{task}/restore:
+    post:
+      summary: Restore the protected pre-task snapshot
+      parameters:
+        - $ref: "#/components/parameters/Task"
+      responses:
+        "202": { description: Restore started, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "409": { description: Task active or workspace locked }
+components:
+  securitySchemes:
+    jupyterHubToken:
+      type: http
+      scheme: bearer
+      description: Per-user token validated through the JupyterHub user API
+    cleanupToken:
+      type: http
+      scheme: bearer
+      description: Dedicated internal token mounted from a Secret
+  parameters:
+    Workspace: { name: workspace, in: path, required: true, schema: { type: string } }
+    Agent: { name: agent, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", maxLength: 30 } }
+    Task: { name: task, in: path, required: true, schema: { type: string } }
+  schemas:
+    AgentWrite:
+      type: object
+      additionalProperties: false
+      required: [profile, instructions, model]
+      properties:
+        id: { type: string, pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", maxLength: 30 }
+        profile: { type: string, minLength: 1, maxLength: 200 }
+        instructions: { type: string, maxLength: 16384 }
+        model: { type: string, minLength: 1, maxLength: 200 }
+        skillSources:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/SkillSource" }
+        environment:
+          type: object
+          maxProperties: 32
+          description: Non-sensitive variables synchronized from KUBEOPENCODE_ENV_* before terminal attachment.
+          additionalProperties: { type: string, maxLength: 4096 }
+    SkillSource:
+      type: object
+      additionalProperties: false
+      required: [name, repository]
+      properties:
+        name: { type: string }
+        repository: { type: string, format: uri, description: Public HTTPS URL without embedded credentials }
+        ref: { type: string }
+        path: { type: string }
+        names: { type: array, items: { type: string } }
+    AgentConfig:
+      type: object
+      required: [id, resourceName, profile, instructions, model, allowedModels]
+      properties:
+        id: { type: string }
+        resourceName: { type: string, readOnly: true }
+        profile: { type: string }
+        instructions: { type: string }
+        model: { type: string }
+        skillSources:
+          type: array
+          maxItems: 5
+          items: { $ref: "#/components/schemas/SkillSource" }
+        environment:
+          type: object
+          maxProperties: 32
+          description: Non-sensitive variables synchronized from KUBEOPENCODE_ENV_* before terminal attachment; credentials are rejected.
+          additionalProperties: { type: string, maxLength: 4096 }
+        allowedModels: { type: array, items: { type: string } }
+        updatedAt: { type: string, format: date-time }
+    Task:
+      type: object
+      required: [id, workspaceId, owner, phase, snapshotName, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        workspaceId: { type: string }
+        agentId: { type: string }
+        owner: { type: string }
+        phase: { type: string, enum: [Snapshotting, Queued, Running, CollectingChanges, Succeeded, Failed, Cancelled, Restoring, Restored] }
+        message: { type: string }
+        snapshotName: { type: string }
+        changedFiles: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+

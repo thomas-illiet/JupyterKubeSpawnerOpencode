@@ -1,0 +1,66 @@
+image:
+  repository: registry.example.com/platform/jupyter-kubeopencode-mediator
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+mediator:
+  namespace: kubeopencode-system
+  jupyterHubUserURL: http://hub.jupyterhub.svc.cluster.local:8081/hub/api/user
+  kubeOpenCodeServerURL: http://kubeopencode-server.kubeopencode-system.svc.cluster.local:2746
+  snapshotImage: alpine:3.22
+  taskTimeout: 1h
+  reconcileInterval: 2s
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+cleanup:
+  enabled: true
+  existingSecret: jupyter-kubeopencode-cleanup
+  tokenKey: token
+
+agent:
+  cpuRequest: 250m
+  cpuLimit: "2"
+  memoryRequest: 512Mi
+  memoryLimit: 4Gi
+  ephemeralStorageLimit: 4Gi
+
+workspaces:
+  - id: alice-main
+    owner: alice
+    namespace: jupyter-users
+    pvc: claim-alice
+    subPath: work
+    snapshotPvc: claim-alice-kubeopencode-snapshots
+    openCodeBaseUrl: http://model-gateway.model-gateway.svc.cluster.local
+    openCodeModel: model-proxy/approved-model
+    allowedModels: [model-proxy/approved-model]
+    modelProxyUrl: http://egress-proxy.model-gateway.svc.cluster.local:3128
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    # Set to gvisor or kata only when that RuntimeClass is installed and tested.
+    runtimeClassName: ""
+  - id: bob-main
+    owner: bob
+    namespace: jupyter-users
+    pvc: claim-bob
+    subPath: work
+    snapshotPvc: claim-bob-kubeopencode-snapshots
+    openCodeBaseUrl: http://model-gateway.model-gateway.svc.cluster.local
+    openCodeModel: model-proxy/approved-model
+    allowedModels: [model-proxy/approved-model]
+    modelProxyUrl: http://egress-proxy.model-gateway.svc.cluster.local:3128
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+    runtimeClassName: ""
+
+networkPolicy:
+  enabled: true
+  modelGatewayNamespaceLabel: model-gateway
+  jupyterHubNamespaceLabel: jupyterhub
+  kubeOpenCodeNamespaceLabel: kubeopencode-system
+  dnsNamespaceLabel: kube-system
+  apiServerCIDR: 10.0.0.1/32

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: jupyter-kubeopencode
+description: Secure JupyterHub/code-server mediator for KubeOpenCode
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+annotations:
+  kubeopencode.io/tested-version: "v0.1.9"
+  kubeopencode.io/tested-commit: "593d734f0eff396146da15c82efe545b695102b7"
+

@@ -1,0 +1,34 @@
+image:
+  repository: jupyter-kubeopencode-mediator
+  tag: demo
+  pullPolicy: Never
+
+mediator:
+  namespace: kubeopencode-system
+  jupyterHubUserURL: http://jko-demo-auth.vscode-hub.svc.cluster.local:8080/hub/api/user
+  kubeOpenCodeServerURL: http://kubeopencode-server.kubeopencode-system.svc.cluster.local:2746
+  snapshotImage: alpine:3.22
+  taskTimeout: 15m
+  reconcileInterval: 1s
+
+workspaces:
+  - id: alice-main
+    owner: alice
+    namespace: vscode-hub
+    pvc: claim-alice
+    subPath: work
+    snapshotPvc: claim-alice-kubeopencode-snapshots
+    openCodeBaseUrl: http://knative-opencode-model-proxy.opencode.svc.cluster.local
+    openCodeModel: model-proxy/auto
+    allowedModels:
+      - model-proxy/auto
+    runAsUser: 1000
+    runAsGroup: 100
+    fsGroup: 100
+
+# Docker Desktop demo only. Production must enable this and use an approved
+# egress/model proxy as documented by the main chart.
+networkPolicy:
+  enabled: false
+  kubeOpenCodeNamespaceLabel: kubeopencode-system
+

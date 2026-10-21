@@ -1,0 +1,13 @@
+bin/
+coverage.out
+.DS_Store
+.env
+.output/
+*.log
+*.tmp
+demo/__pycache__/
+**/__pycache__/
+vscode-extension/node_modules/
+vscode-extension/dist/
+vscode-extension/*.vsix
+

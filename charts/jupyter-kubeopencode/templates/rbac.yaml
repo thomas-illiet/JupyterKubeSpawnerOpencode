@@ -1,0 +1,49 @@
+{{- $seenNamespaces := dict }}
+{{- range $workspace := .Values.workspaces }}
+{{- if not (hasKey $seenNamespaces $workspace.namespace) }}
+{{- $_ := set $seenNamespaces $workspace.namespace true }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jupyter-kubeopencode-mediator
+  namespace: {{ $workspace.namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "create", "update", "delete", "deletecollection"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "create", "deletecollection"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "create", "update", "delete", "deletecollection"]
+  - apiGroups: ["kubeopencode.io"]
+    resources: ["agents"]
+    verbs: ["get", "create", "update", "delete"]
+  - apiGroups: ["kubeopencode.io"]
+    resources: ["tasks"]
+    verbs: ["get", "list", "create", "delete", "deletecollection"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jupyter-kubeopencode-mediator
+  namespace: {{ $workspace.namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "jko.name" $ }}-mediator
+    namespace: {{ $.Values.mediator.namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jupyter-kubeopencode-mediator
+{{- end }}
+{{- end }}
+

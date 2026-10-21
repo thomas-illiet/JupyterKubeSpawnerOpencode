@@ -1,0 +1,186 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jko-demo-auth
+  namespace: vscode-hub
+  labels: { app.kubernetes.io/part-of: jko-demo }
+type: Opaque
+stringData:
+  # This is a non-production local-demo credential, not a real JupyterHub token.
+  token: jko-local-demo-token-not-for-production
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: vscode-hub
+  labels: { app.kubernetes.io/part-of: jko-demo }
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claim-alice-kubeopencode-snapshots
+  namespace: vscode-hub
+  labels: { app.kubernetes.io/part-of: jko-demo }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: hostpath
+  resources:
+    requests: { storage: 2Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jko-demo-auth
+  namespace: vscode-hub
+  labels: { app.kubernetes.io/part-of: jko-demo }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: jko-demo-auth } }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jko-demo-auth
+        app.kubernetes.io/part-of: jko-demo
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: auth
+          image: jko-demo-auth:demo
+          imagePullPolicy: Never
+          env:
+            - { name: DEMO_USER, value: alice }
+            - name: DEMO_TOKEN
+              valueFrom: { secretKeyRef: { name: jko-demo-auth, key: token } }
+          ports: [{ name: http, containerPort: 8080 }]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          readinessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 1 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jko-demo-auth
+  namespace: vscode-hub
+  labels: { app.kubernetes.io/part-of: jko-demo }
+spec:
+  selector: { app.kubernetes.io/name: jko-demo-auth }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jko-demo-code-server
+  namespace: vscode-hub
+  labels: { app.kubernetes.io/part-of: jko-demo }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app.kubernetes.io/name: jko-demo-code-server } }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jko-demo-code-server
+        app.kubernetes.io/part-of: jko-demo
+        app.kubernetes.io/component: jupyter-workspace
+        mediator.kubeopencode.io/workspace-id: alice-main
+        hub.jupyter.org/username: alice
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 100
+        fsGroup: 100
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        - name: initialize-workspace-permissions
+          image: alpine:3.22
+          command: ["/bin/chown", "1000:100", "/home/jovyan/work"]
+          volumeMounts:
+            - { name: home, mountPath: /home/jovyan }
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"], add: ["CHOWN"] }
+      containers:
+        - name: code-server
+          image: jko-code-server:demo
+          imagePullPolicy: Never
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              mkdir -p /tmp/jko-user-data/User
+              mkdir -p /home/jovyan/.config/opencode/plugins
+              cp /opt/jko/opencloud-config/plugins/opencloud-tui.tsx /home/jovyan/.config/opencode/plugins/opencloud-tui.tsx
+              if [ ! -f /home/jovyan/.config/opencode/tui.json ]; then
+                cp /opt/jko/opencloud-config/tui.json /home/jovyan/.config/opencode/tui.json
+              fi
+              cp /config/settings.json /tmp/jko-user-data/User/settings.json
+              exec code-server \
+                --bind-addr 0.0.0.0:8080 \
+                --auth none \
+                --disable-telemetry \
+                --disable-update-check \
+                --user-data-dir /tmp/jko-user-data \
+                --extensions-dir /opt/jko/extensions \
+                /home/jovyan/work
+          env:
+            - name: JUPYTERHUB_API_TOKEN
+              valueFrom: { secretKeyRef: { name: jko-demo-auth, key: token } }
+            - { name: KUBEOPENCODE_MEDIATOR_URL, value: http://kubeopencode-mediator.kubeopencode-system.svc.cluster.local:8080 }
+            - { name: DO_NOT_TRACK, value: "1" }
+            - { name: OPENCODE_DISABLE_AUTOUPDATE, value: "1" }
+            - { name: OPENCODE_DISABLE_MODELS_FETCH, value: "1" }
+          ports: [{ name: http, containerPort: 8080 }]
+          volumeMounts:
+            - { name: home, mountPath: /home/jovyan }
+            - { name: settings, mountPath: /config, readOnly: true }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 2Gi }
+          readinessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 3 }
+      volumes:
+        - name: home
+          persistentVolumeClaim: { claimName: claim-alice }
+        - name: settings
+          configMap: { name: jko-demo-code-server-settings }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jko-demo-code-server-settings
+  namespace: vscode-hub
+  labels: { app.kubernetes.io/part-of: jko-demo }
+data:
+  settings.json: |
+    {
+      "kubeOpenCode.mediatorUrl": "http://kubeopencode-mediator.kubeopencode-system.svc.cluster.local:8080",
+      "remote.autoForwardPorts": false
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jko-demo-code-server
+  namespace: vscode-hub
+  labels: { app.kubernetes.io/part-of: jko-demo }
+spec:
+  selector: { app.kubernetes.io/name: jko-demo-code-server }
+  ports: [{ name: http, port: 8080, targetPort: http }]
+

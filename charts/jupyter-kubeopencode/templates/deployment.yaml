@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jko.name" . }}-mediator
+  namespace: {{ .Values.mediator.namespace }}
+  labels:
+    {{- include "jko.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "jko.name" . }}-mediator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "jko.name" . }}-mediator
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/component: mediator
+      annotations:
+        checksum/workspaces: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "jko.name" . }}-mediator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: mediator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - { name: WORKSPACES_FILE, value: /etc/kubeopencode-mediator/workspaces.json }
+            - { name: JUPYTERHUB_USER_URL, value: {{ .Values.mediator.jupyterHubUserURL | quote }} }
+            - { name: KUBEOPENCODE_SERVER_URL, value: {{ .Values.mediator.kubeOpenCodeServerURL | quote }} }
+            - { name: SNAPSHOT_IMAGE, value: {{ .Values.mediator.snapshotImage | quote }} }
+            - { name: TASK_TIMEOUT, value: {{ .Values.mediator.taskTimeout | quote }} }
+            - { name: RECONCILE_INTERVAL, value: {{ .Values.mediator.reconcileInterval | quote }} }
+            - { name: AGENT_CPU_REQUEST, value: {{ .Values.agent.cpuRequest | quote }} }
+            - { name: AGENT_CPU_LIMIT, value: {{ .Values.agent.cpuLimit | quote }} }
+            - { name: AGENT_MEMORY_REQUEST, value: {{ .Values.agent.memoryRequest | quote }} }
+            - { name: AGENT_MEMORY_LIMIT, value: {{ .Values.agent.memoryLimit | quote }} }
+            - { name: AGENT_EPHEMERAL_STORAGE_LIMIT, value: {{ .Values.agent.ephemeralStorageLimit | quote }} }
+            {{- if .Values.cleanup.enabled }}
+            - { name: CLEANUP_TOKEN_FILE, value: /var/run/secrets/kubeopencode-cleanup/token }
+            {{- end }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/kubeopencode-mediator, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+            {{- if .Values.cleanup.enabled }}
+            - { name: cleanup-token, mountPath: /var/run/secrets/kubeopencode-cleanup, readOnly: true }
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            {{- toYaml .Values.mediator.resources | nindent 12 }}
+          readinessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 2 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 10 }
+      volumes:
+        - name: config
+          configMap: { name: {{ include "jko.name" . }}-workspaces }
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+        {{- if .Values.cleanup.enabled }}
+        - name: cleanup-token
+          secret:
+            secretName: {{ .Values.cleanup.existingSecret | quote }}
+            items:
+              - { key: {{ .Values.cleanup.tokenKey | quote }}, path: token }
+        {{- end }}
+

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="700" viewBox="0 0 1440 700" role="img" aria-labelledby="title desc">
+  <title id="title">Transactional Task security lifecycle</title>
+  <desc id="desc">A Task acquires an exclusive Lease, creates a protected snapshot, runs with a bounded duration, and supports explicit restoration before releasing the lock.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f8fafc}.lane{fill:#fff;stroke:#cbd5e1;stroke-width:2}.stage{fill:#ecfeff;stroke:#0891b2;stroke-width:2}.protect{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2}.warn{fill:#fff7ed;stroke:#ea580c;stroke-width:2}.end{fill:#ecfdf5;stroke:#059669;stroke-width:2}.head{font:700 22px system-ui,sans-serif;fill:#0f172a}.label{font:700 16px system-ui,sans-serif;fill:#0f172a}.body{font:14px system-ui,sans-serif;fill:#475569}.tiny{font:12px system-ui,sans-serif;fill:#475569}.flow{stroke:#334155;stroke-width:2.4;fill:none;marker-end:url(#arrow)}.branch{stroke:#ea580c;stroke-width:2.2;fill:none;marker-end:url(#arrowOrange)}.return{stroke:#7c3aed;stroke-width:2.2;fill:none;stroke-dasharray:7 6;marker-end:url(#arrowPurple)}.num{fill:#0f172a}.numtext{font:700 13px system-ui,sans-serif;fill:#fff}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#334155"/></marker>
+    <marker id="arrowOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#ea580c"/></marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#7c3aed"/></marker>
+  </defs>
+  <rect class="bg" width="1440" height="700" rx="22"/>
+  <text class="head" x="720" y="48" text-anchor="middle">Optional Task API: locking, snapshots, and controlled restoration</text>
+  <rect class="lane" x="35" y="85" width="1370" height="540" rx="20"/>
+
+  <rect class="stage" x="70" y="180" width="210" height="170" rx="14"/>
+  <circle class="num" cx="100" cy="210" r="15"/><text class="numtext" x="100" y="215" text-anchor="middle">1</text>
+  <text class="label" x="175" y="250" text-anchor="middle">Authenticate</text>
+  <text class="body" x="175" y="280" text-anchor="middle">Bearer → username</text>
+  <text class="body" x="175" y="305" text-anchor="middle">owned workspace</text>
+  <text class="body" x="175" y="330" text-anchor="middle">otherwise neutral 404</text>
+
+  <rect class="protect" x="330" y="180" width="210" height="170" rx="14"/>
+  <circle class="num" cx="360" cy="210" r="15"/><text class="numtext" x="360" y="215" text-anchor="middle">2</text>
+  <text class="label" x="435" y="250" text-anchor="middle">Acquire Lease</text>
+  <text class="body" x="435" y="280" text-anchor="middle">one writer per workspace</text>
+  <text class="body" x="435" y="305" text-anchor="middle">periodic renewal</text>
+  <text class="body" x="435" y="330" text-anchor="middle">conflict → HTTP 409</text>
+
+  <rect class="protect" x="590" y="180" width="210" height="170" rx="14"/>
+  <circle class="num" cx="620" cy="210" r="15"/><text class="numtext" x="620" y="215" text-anchor="middle">3</text>
+  <text class="label" x="695" y="250" text-anchor="middle">Protected snapshot</text>
+  <text class="body" x="695" y="280" text-anchor="middle">separate restricted Job</text>
+  <text class="body" x="695" y="305" text-anchor="middle">workspace → snapshot PVC</text>
+  <text class="body" x="695" y="330" text-anchor="middle">not mounted in the Agent</text>
+
+  <rect class="stage" x="850" y="180" width="210" height="170" rx="14"/>
+  <circle class="num" cx="880" cy="210" r="15"/><text class="numtext" x="880" y="215" text-anchor="middle">4</text>
+  <text class="label" x="955" y="250" text-anchor="middle">Run Task</text>
+  <text class="body" x="955" y="280" text-anchor="middle">owned Agent</text>
+  <text class="body" x="955" y="305" text-anchor="middle">bounded time and resources</text>
+  <text class="body" x="955" y="330" text-anchor="middle">explicit cancellation</text>
+
+  <rect class="end" x="1110" y="180" width="210" height="170" rx="14"/>
+  <circle class="num" cx="1140" cy="210" r="15"/><text class="numtext" x="1140" y="215" text-anchor="middle">5</text>
+  <text class="label" x="1215" y="250" text-anchor="middle">Complete</text>
+  <text class="body" x="1215" y="280" text-anchor="middle">bounded diff</text>
+  <text class="body" x="1215" y="305" text-anchor="middle">persistent Kubernetes state</text>
+  <text class="body" x="1215" y="330" text-anchor="middle">Lease released</text>
+
+  <path class="flow" d="M280 265 H330"/><path class="flow" d="M540 265 H590"/><path class="flow" d="M800 265 H850"/><path class="flow" d="M1060 265 H1110"/>
+
+  <rect class="warn" x="850" y="435" width="210" height="120" rx="14"/>
+  <text class="label" x="955" y="469" text-anchor="middle">Failure / timeout / cancel</text>
+  <text class="body" x="955" y="505" text-anchor="middle">stop the Task</text>
+  <text class="body" x="955" y="530" text-anchor="middle">release the Lease</text>
+  <path class="branch" d="M955 350 V435"/>
+
+  <rect class="protect" x="1110" y="435" width="210" height="120" rx="14"/>
+  <text class="label" x="1215" y="469" text-anchor="middle">Explicit restore</text>
+  <text class="body" x="1215" y="505" text-anchor="middle">reacquire a Lease</text>
+  <text class="body" x="1215" y="530" text-anchor="middle">snapshot PVC → workspace</text>
+  <path class="return" d="M1110 495 H1060"/>
+  <path class="return" d="M1215 435 V350"/>
+
+  <text class="tiny" x="720" y="595" text-anchor="middle">The direct interactive path does not use this snapshot: avoid concurrent VS Code / OpenCode edits.</text>
+  <text class="tiny" x="720" y="660" text-anchor="middle">Implementation: internal/api/service.go · internal/kube/kubernetes.go</text>
+</svg>

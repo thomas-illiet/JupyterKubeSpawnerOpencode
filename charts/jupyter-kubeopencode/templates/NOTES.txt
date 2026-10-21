@@ -1,0 +1,12 @@
+Jupyter KubeOpenCode {{ .Chart.AppVersion }} is installed.
+
+Mediator service:
+  http://kubeopencode-mediator.{{ .Values.mediator.namespace }}.svc.cluster.local:8080
+
+Before onboarding users:
+  1. Install the VSIX and terminal launcher in the code-server image.
+  2. Keep ServiceAccount token automount disabled in Jupyter and Agent pods.
+  3. Run the cross-user checks in docs/acceptance.md.
+  4. Confirm NetworkPolicy is enforced by the cluster CNI.
+
+KubeOpenCode compatibility: {{ index .Chart.Annotations "kubeopencode.io/tested-version" }}

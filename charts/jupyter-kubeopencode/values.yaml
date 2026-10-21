@@ -1,0 +1,57 @@
+image:
+  repository: ghcr.io/example/jupyter-kubeopencode-mediator
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+mediator:
+  namespace: kubeopencode-system
+  jupyterHubUserURL: http://hub.jupyterhub.svc.cluster.local:8081/hub/api/user
+  kubeOpenCodeServerURL: http://kubeopencode-server.kubeopencode-system.svc.cluster.local:2746
+  snapshotImage: alpine:3.22
+  taskTimeout: 1h
+  reconcileInterval: 2s
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+cleanup:
+  enabled: false
+  # Existing Secret shared only with the trusted JupyterHub and mediator.
+  existingSecret: ""
+  tokenKey: token
+
+agent:
+  cpuRequest: 250m
+  cpuLimit: "2"
+  memoryRequest: 512Mi
+  memoryLimit: 4Gi
+  ephemeralStorageLimit: 4Gi
+
+# This list is the authorization source of truth. Do not allow users to edit it.
+workspaces:
+  - id: alice-main
+    owner: alice
+    namespace: jupyter-alice
+    pvc: claim-alice
+    subPath: work
+    snapshotPvc: claim-alice-kubeopencode-snapshots
+    modelSecret: alice-model-credentials
+    modelSecretKey: api-key
+    modelEnvironment: OPENAI_API_KEY
+    modelProxyUrl: http://egress-proxy.model-gateway.svc.cluster.local:3128
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    runtimeClassName: ""
+
+networkPolicy:
+  enabled: true
+  # Kubernetes NetworkPolicy cannot filter DNS names. Production Internet access
+  # should go through a namespace-local egress/model gateway carrying this label.
+  modelGatewayNamespaceLabel: model-gateway
+  jupyterHubNamespaceLabel: jupyterhub
+  kubeOpenCodeNamespaceLabel: kubeopencode-system
+  dnsNamespaceLabel: kube-system
+  # Set to the control-plane/API endpoint CIDR when the CNI enforces egress from mediator.
+  apiServerCIDR: ""
+

@@ -1,0 +1,47 @@
+{
+  "name": "jupyter-kubeopencode",
+  "displayName": "Jupyter OpenCloud",
+  "description": "Configure isolated OpenCloud Agents and open them in the code-server terminal.",
+  "version": "0.1.0",
+  "publisher": "thomas-illiet",
+  "license": "Apache-2.0",
+  "engines": { "vscode": "^1.96.0" },
+  "categories": ["Machine Learning", "Other"],
+  "activationEvents": ["onView:kubeOpenCode.agent"],
+  "main": "./dist/extension.js",
+  "capabilities": { "untrustedWorkspaces": { "supported": true } },
+  "contributes": {
+    "commands": [
+      { "command": "kubeOpenCode.openTerminal", "title": "OpenCloud: Open interactive terminal" },
+      { "command": "kubeOpenCode.refreshAgents", "title": "OpenCloud: Refresh Agents" }
+    ],
+    "viewsContainers": {
+      "activitybar": [{ "id": "kubeOpenCode", "title": "OpenCloud", "icon": "media/icon.svg" }]
+    },
+    "views": { "kubeOpenCode": [{ "id": "kubeOpenCode.agent", "name": "Agents", "type": "webview" }] },
+    "menus": {
+      "view/title": [
+        { "command": "kubeOpenCode.openTerminal", "when": "view == kubeOpenCode.agent", "group": "navigation@1" },
+        { "command": "kubeOpenCode.refreshAgents", "when": "view == kubeOpenCode.agent", "group": "navigation@2" }
+      ]
+    },
+    "configuration": {
+      "title": "Jupyter OpenCloud",
+      "properties": {
+        "kubeOpenCode.mediatorUrl": { "type": "string", "default": "http://kubeopencode-mediator.kubeopencode-system.svc.cluster.local:8080", "description": "Internal mediator API URL. HTTPS is required unless the host is loopback or a Kubernetes service." }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "check": "tsc -p ./ --noEmit",
+    "package": "vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "@types/vscode": "1.96.0",
+    "@vscode/vsce": "3.2.1",
+    "typescript": "5.7.3"
+  }
+}
+

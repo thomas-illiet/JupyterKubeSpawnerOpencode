@@ -1,0 +1,27 @@
+ARG OPENCODE_ATTACH_IMAGE=ghcr.io/kubeopencode/kubeopencode-agent-attach@sha256:93a88763f649d7a3aac26edf9414b20024be1d6df981880d29f4fdc86fbd40bf
+
+FROM golang:1.26@sha256:37cfcca63222ec499bec5e8ad7aad52dbf7529db36d5812b8eae2f0621aa92d6 AS launcher-builder
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY cmd/attach-proxy ./cmd/attach-proxy
+RUN CGO_ENABLED=0 go build -trimpath -o /jko-attach-proxy ./cmd/attach-proxy
+
+FROM ${OPENCODE_ATTACH_IMAGE} AS opencode-runtime
+
+FROM jupyterhub-code-server:local
+USER root
+COPY --from=launcher-builder /jko-attach-proxy /usr/local/bin/jko-attach-proxy
+COPY --from=opencode-runtime /usr/local/bin/opencode /usr/local/libexec/opencode-real
+COPY demo/opencode-wrapper.sh /usr/local/bin/opencloud
+COPY demo/opencode-selector.py /usr/local/libexec/opencode-selector.py
+COPY demo/tui.json /opt/jko/opencloud-config/tui.json
+COPY demo/opencloud-tui.tsx /opt/jko/opencloud-config/plugins/opencloud-tui.tsx
+COPY vscode-extension/jupyter-kubeopencode-0.1.0.vsix /tmp/jupyter-kubeopencode.vsix
+RUN mkdir -p /opt/jko/extensions \
+ && ln -s /usr/local/bin/opencloud /usr/local/bin/opencode \
+ && chmod 0755 /usr/local/bin/opencloud /usr/local/libexec/opencode-real /usr/local/libexec/opencode-selector.py \
+ && code-server --install-extension /tmp/jupyter-kubeopencode.vsix --extensions-dir /opt/jko/extensions \
+ && chown -R 1000:100 /opt/jko \
+ && rm /tmp/jupyter-kubeopencode.vsix
+USER 1000
+

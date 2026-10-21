@@ -1,0 +1,13 @@
+{{- $owners := dict }}
+{{- if and .Values.cleanup.enabled (not .Values.cleanup.existingSecret) }}{{ fail "cleanup.existingSecret is required when cleanup is enabled" }}{{ end }}
+{{- range $workspace := .Values.workspaces }}
+{{- if or (not $workspace.id) (not $workspace.owner) (not $workspace.namespace) (not $workspace.pvc) (not $workspace.snapshotPvc) (not $workspace.subPath) }}
+{{- fail "each workspace requires id, owner, namespace, pvc, snapshotPvc and subPath" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $workspace.id) }}{{ fail "workspace id must be a lowercase DNS label" }}{{ end }}
+{{- if gt (len $workspace.id) 50 }}{{ fail "workspace id must be at most 50 characters" }}{{ end }}
+{{- if contains ".." $workspace.subPath }}{{ fail "workspace subPath must not contain '..'" }}{{ end }}
+{{- if hasKey $owners $workspace.owner }}{{ fail (printf "owner %s must map to exactly one workspace" $workspace.owner) }}{{ end }}
+{{- $_ := set $owners $workspace.owner true }}
+{{- end }}
+
