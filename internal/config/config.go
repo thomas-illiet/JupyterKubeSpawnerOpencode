@@ -11,9 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/viper"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+// Workspace describes the administrator-owned runtime boundary for one user.
 type Workspace struct {
 	ID               string   `json:"id"`
 	Owner            string   `json:"owner"`
@@ -26,6 +28,7 @@ type Workspace struct {
 	OpenCodeBaseURL  string   `json:"openCodeBaseUrl,omitempty"`
 	OpenCodeModel    string   `json:"openCodeModel,omitempty"`
 	AllowedModels    []string `json:"allowedModels,omitempty"`
+	ModelMTLS        bool     `json:"modelMTLS,omitempty"`
 	SnapshotPVC      string   `json:"snapshotPvc"`
 	RuntimeClassName string   `json:"runtimeClassName,omitempty"`
 	ExecutorImage    string   `json:"executorImage,omitempty"`
@@ -39,6 +42,7 @@ type Workspace struct {
 	RequiredSkills   []string `json:"requiredSkills,omitempty"`
 }
 
+// Config contains the validated mediator runtime configuration.
 type Config struct {
 	ListenAddress      string
 	JupyterHubUserURL  string
@@ -56,22 +60,59 @@ type Config struct {
 	Workspaces         map[string]Workspace
 }
 
+// NewViper returns an isolated Viper instance configured with mediator defaults
+// and direct environment-variable lookup.
+func NewViper() *viper.Viper {
+	v := viper.New()
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
+	v.AutomaticEnv()
+	v.SetDefault("listen-address", ":8080")
+	v.SetDefault("jupyterhub-user-url", "http://hub:8081/hub/api/user")
+	v.SetDefault("kubeopencode-server-url", "http://kubeopencode-server.kubeopencode-system.svc.cluster.local:2746")
+	v.SetDefault("auth-timeout", 5*time.Second)
+	v.SetDefault("reconcile-interval", 2*time.Second)
+	v.SetDefault("snapshot-image", "alpine:3.22")
+	v.SetDefault("agent-cpu-request", "250m")
+	v.SetDefault("agent-cpu-limit", "2")
+	v.SetDefault("agent-memory-request", "512Mi")
+	v.SetDefault("agent-memory-limit", "4Gi")
+	v.SetDefault("agent-ephemeral-storage-limit", "4Gi")
+	v.SetDefault("task-timeout", time.Hour)
+	v.SetDefault("workspaces-file", "/etc/kubeopencode-mediator/workspaces.json")
+	return v
+}
+
+// FromEnv loads mediator configuration from environment variables via Viper.
 func FromEnv() (Config, error) {
+	return FromViper(NewViper())
+}
+
+// FromViper decodes and validates mediator configuration from an isolated Viper instance.
+func FromViper(v *viper.Viper) (Config, error) {
 	cfg := Config{
-		ListenAddress:      env("LISTEN_ADDRESS", ":8080"),
-		JupyterHubUserURL:  env("JUPYTERHUB_USER_URL", "http://hub:8081/hub/api/user"),
-		KubeOpenCodeURL:    env("KUBEOPENCODE_SERVER_URL", "http://kubeopencode-server.kubeopencode-system.svc.cluster.local:2746"),
-		AuthTimeout:        durationEnv("AUTH_TIMEOUT", 5*time.Second),
-		ReconcileInterval:  durationEnv("RECONCILE_INTERVAL", 2*time.Second),
-		SnapshotImage:      env("SNAPSHOT_IMAGE", "alpine:3.22"),
-		AgentCPURequest:    env("AGENT_CPU_REQUEST", "250m"),
-		AgentCPULimit:      env("AGENT_CPU_LIMIT", "2"),
-		AgentMemoryRequest: env("AGENT_MEMORY_REQUEST", "512Mi"),
-		AgentMemoryLimit:   env("AGENT_MEMORY_LIMIT", "4Gi"),
-		EphemeralLimit:     env("AGENT_EPHEMERAL_STORAGE_LIMIT", "4Gi"),
-		TaskTimeout:        durationEnv("TASK_TIMEOUT", time.Hour),
+		ListenAddress:      v.GetString("listen-address"),
+		JupyterHubUserURL:  v.GetString("jupyterhub-user-url"),
+		KubeOpenCodeURL:    v.GetString("kubeopencode-server-url"),
+		AuthTimeout:        v.GetDuration("auth-timeout"),
+		ReconcileInterval:  v.GetDuration("reconcile-interval"),
+		SnapshotImage:      v.GetString("snapshot-image"),
+		AgentCPURequest:    v.GetString("agent-cpu-request"),
+		AgentCPULimit:      v.GetString("agent-cpu-limit"),
+		AgentMemoryRequest: v.GetString("agent-memory-request"),
+		AgentMemoryLimit:   v.GetString("agent-memory-limit"),
+		EphemeralLimit:     v.GetString("agent-ephemeral-storage-limit"),
+		TaskTimeout:        v.GetDuration("task-timeout"),
 	}
-	if tokenFile := os.Getenv("CLEANUP_TOKEN_FILE"); tokenFile != "" {
+	for name, value := range map[string]time.Duration{
+		"AUTH_TIMEOUT":       cfg.AuthTimeout,
+		"RECONCILE_INTERVAL": cfg.ReconcileInterval,
+		"TASK_TIMEOUT":       cfg.TaskTimeout,
+	} {
+		if value <= 0 {
+			return Config{}, fmt.Errorf("%s must be a positive duration", name)
+		}
+	}
+	if tokenFile := v.GetString("cleanup-token-file"); tokenFile != "" {
 		data, err := os.ReadFile(tokenFile)
 		if err != nil {
 			return Config{}, fmt.Errorf("read cleanup token file: %w", err)
@@ -100,7 +141,7 @@ func FromEnv() (Config, error) {
 		}
 	}
 
-	path := env("WORKSPACES_FILE", "/etc/kubeopencode-mediator/workspaces.json")
+	path := v.GetString("workspaces-file")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read workspaces file: %w", err)
@@ -143,6 +184,7 @@ func FromEnv() (Config, error) {
 	return cfg, nil
 }
 
+// validateWorkspace verifies required fields and storage, identity, model, and Registry constraints.
 func validateWorkspace(workspace Workspace) error {
 	if len(workspace.ID) > 50 || !regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`).MatchString(workspace.ID) {
 		return fmt.Errorf("workspace id %q must be a lowercase DNS label of at most 50 characters", workspace.ID)
@@ -179,27 +221,17 @@ func validateWorkspace(workspace Workspace) error {
 	if workspace.OpenCodeBaseURL != "" && !strings.HasPrefix(workspace.OpenCodeBaseURL, "http://") && !strings.HasPrefix(workspace.OpenCodeBaseURL, "https://") {
 		return fmt.Errorf("workspace %q has invalid openCodeBaseUrl", workspace.ID)
 	}
+	if workspace.ModelMTLS {
+		parsed, err := url.Parse(workspace.OpenCodeBaseURL)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+			return fmt.Errorf("workspace %q modelMTLS requires an HTTPS openCodeBaseUrl without embedded credentials", workspace.ID)
+		}
+		if workspace.ExecutorImage == "" {
+			return fmt.Errorf("workspace %q modelMTLS requires an executorImage containing jko-model-mtls-proxy", workspace.ID)
+		}
+	}
 	if workspace.ModelProxyURL != "" && !strings.HasPrefix(workspace.ModelProxyURL, "http://") && !strings.HasPrefix(workspace.ModelProxyURL, "https://") {
 		return fmt.Errorf("workspace %q has invalid modelProxyUrl", workspace.ID)
 	}
 	return nil
-}
-
-func env(name, fallback string) string {
-	if value := os.Getenv(name); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func durationEnv(name string, fallback time.Duration) time.Duration {
-	value := os.Getenv(name)
-	if value == "" {
-		return fallback
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
 }

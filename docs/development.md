@@ -32,8 +32,9 @@ or `/tmp` caches and do not write generated assets into source directories.
 ## Repository layout
 
 ```text
-cmd/                 mediator and demo-auth entrypoints
-internal/            API, auth, configuration and Kubernetes adapters
+cmd/                 Cobra entrypoints for mediator, attach proxy and demo auth
+internal/api/        HTTP API split by agents, registry, tasks and lifecycle
+internal/            authentication, Viper configuration and Kubernetes adapters
 charts/               production Helm chart
 vscode-extension/     configuration-only code-server extension
 demo/                 local Docker Desktop manifests and launcher
@@ -41,6 +42,10 @@ docs/                 architecture, operations and API documentation
 examples/             non-secret production values example
 hack/                 reproducible developer workflows
 ```
+
+Every declared Go function, including unexported helpers, carries a GoDoc-style
+comment. Keep API handlers in their domain file instead of growing a single
+service implementation.
 
 ## Release checklist
 

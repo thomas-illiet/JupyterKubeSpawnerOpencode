@@ -54,6 +54,13 @@ escape.
   users sharing a namespace. It allows only the mediator relay, DNS, and the
   selected model gateway. Kubernetes policies cannot filter DNS names;
   external providers must be reached through an egress gateway.
+- Production workspaces can enable `modelMTLS`. OpenCode then talks only to a
+  loopback proxy in the executor image; that proxy requires TLS 1.3, verifies
+  the embedded gateway CA, and presents an embedded client certificate. The
+  gateway must reject clients that do not present a certificate signed by its
+  client CA. This is defense in depth: a user who can copy the executor binary
+  can also copy and reuse its shared private key, so this mechanism is not a
+  per-user or non-exportable workload identity.
 
 ## Secrets
 

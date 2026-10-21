@@ -55,9 +55,11 @@ workspaces:
     pvc: claim-alice
     subPath: work
     snapshotPvc: claim-alice-kubeopencode-snapshots
-    openCodeBaseUrl: http://model-gateway.model-gateway.svc.cluster.local
+    openCodeBaseUrl: https://model-gateway.model-gateway.svc.cluster.local
     openCodeModel: model-proxy/approved-model
     allowedModels: [model-proxy/approved-model]
+    modelMTLS: true
+    executorImage: registry.example.com/platform/jko-agent-mtls:VERSION
     modelProxyUrl: http://egress-proxy.model-gateway.svc.cluster.local:3128
     runAsUser: 1000
     runAsGroup: 1000
@@ -72,9 +74,11 @@ workspaces:
     pvc: claim-bob
     subPath: work
     snapshotPvc: claim-bob-kubeopencode-snapshots
-    openCodeBaseUrl: http://model-gateway.model-gateway.svc.cluster.local
+    openCodeBaseUrl: https://model-gateway.model-gateway.svc.cluster.local
     openCodeModel: model-proxy/approved-model
     allowedModels: [model-proxy/approved-model]
+    modelMTLS: true
+    executorImage: registry.example.com/platform/jko-agent-mtls:VERSION
     modelProxyUrl: http://egress-proxy.model-gateway.svc.cluster.local:3128
     runAsUser: 1001
     runAsGroup: 1001

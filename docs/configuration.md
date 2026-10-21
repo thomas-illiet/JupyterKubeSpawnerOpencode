@@ -2,8 +2,11 @@
 
 ## Mediator environment
 
-The Helm chart renders these values; direct process configuration is intended
-for development only.
+The binaries use Cobra for commands and flags and isolated Viper instances for
+configuration. Environment variables remain the production interface rendered
+by Helm. For local development, each mediator variable also has a matching
+lowercase kebab-case flag, for example `--listen-address` and
+`--workspaces-file`. Explicit flags take precedence over environment values.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -77,6 +80,27 @@ the mediator. Use administrator-managed Kubernetes Secrets for sensitive data.
 ## Managed OpenCode runtime policy
 
 Every Agent enables only the administrator-defined `model-proxy` provider.
+
+### Embedded mTLS model client
+
+Set `modelMTLS: true`, use an HTTPS `openCodeBaseUrl`, and set `executorImage`
+to an image built from `Dockerfile.agent-mtls`. Build it without placing PEM
+files in the Docker context:
+
+```sh
+make agent-mtls-image \
+  MTLS_CLIENT_CERT=/secure/client.crt \
+  MTLS_CLIENT_KEY=/secure/client.key \
+  MTLS_GATEWAY_CA=/secure/gateway-ca.crt \
+  MTLS_AGENT_IMAGE=registry.example.com/platform/jko-agent-mtls:VERSION
+```
+
+The files are BuildKit secret mounts used only while compiling the static
+proxy. The resulting binary contains the client key and is therefore itself a
+secret-bearing artifact: restrict registry pulls, sign the image, use immutable
+digests, rotate the certificate by rebuilding, and configure the gateway to
+require and authorize the client certificate. The proxy binds only to
+`127.0.0.1:9443`; OpenCode is automatically pointed at that local endpoint.
 Session sharing, automatic updates, AI SDK OpenTelemetry, and remote model
 catalog downloads are disabled. Automatic context compaction and pruning remain
 enabled to bound memory and context growth.

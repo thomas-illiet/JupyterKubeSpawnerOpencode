@@ -89,6 +89,7 @@ type Task struct {
 	CompletionPhase Phase     `json:"completionPhase,omitempty"`
 }
 
+// Terminal implements the terminal operation for this package.
 func (t Task) Terminal() bool {
 	return t.Phase == PhaseSucceeded || t.Phase == PhaseFailed || t.Phase == PhaseCancelled || t.Phase == PhaseRestored
 }

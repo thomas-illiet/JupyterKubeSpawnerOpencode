@@ -112,6 +112,7 @@
         "openCodeBaseUrl": { "type": "string", "pattern": "^https?://" },
         "openCodeModel": { "type": "string", "minLength": 1, "maxLength": 200 },
         "allowedModels": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 200 }, "uniqueItems": true },
+        "modelMTLS": { "type": "boolean", "default": false },
         "modelProxyUrl": { "type": "string", "pattern": "^https?://" },
         "runtimeClassName": { "type": "string" },
         "executorImage": { "type": "string" },

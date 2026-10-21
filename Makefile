@@ -6,8 +6,12 @@ GO_MOD_CACHE ?= /tmp/jko-go-mod
 MEDIATOR_IMAGE ?= jupyter-kubeopencode-mediator:demo
 CODE_SERVER_IMAGE ?= jko-code-server:demo
 AGENT_IMAGE ?= jko-agent:demo
+MTLS_AGENT_IMAGE ?= jko-agent-mtls:production
+MTLS_CLIENT_CERT ?=
+MTLS_CLIENT_KEY ?=
+MTLS_GATEWAY_CA ?=
 
-.PHONY: help doctor bootstrap test extension helm docs shell hygiene verify images demo-up demo-forward demo-down
+.PHONY: help doctor bootstrap test extension helm docs shell hygiene verify images agent-mtls-image demo-up demo-forward demo-down
 
 help: ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -51,6 +55,10 @@ images: extension ## Build local mediator, code-server, and RTK-enabled Agent im
 	docker build --pull -t $(MEDIATOR_IMAGE) .
 	docker build -t $(CODE_SERVER_IMAGE) -f demo/Dockerfile.code-server .
 	docker build -t $(AGENT_IMAGE) -f demo/Dockerfile.agent .
+
+agent-mtls-image: ## Build an Agent executor with a client identity embedded via BuildKit secrets
+	test -n "$(MTLS_CLIENT_CERT)" && test -n "$(MTLS_CLIENT_KEY)" && test -n "$(MTLS_GATEWAY_CA)"
+	docker build --secret id=model_mtls_client_cert,src=$(MTLS_CLIENT_CERT) --secret id=model_mtls_client_key,src=$(MTLS_CLIENT_KEY) --secret id=model_mtls_gateway_ca,src=$(MTLS_GATEWAY_CA) -t $(MTLS_AGENT_IMAGE) -f Dockerfile.agent-mtls .
 
 demo-up: ## Build and deploy the reproducible Docker Desktop demo
 	./hack/demo-up.sh

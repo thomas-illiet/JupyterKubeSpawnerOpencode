@@ -43,6 +43,7 @@ type Kubernetes struct {
 	dynamic dynamic.Interface
 }
 
+// NewClient implements the new client operation for this package.
 func NewClient(cfg config.Config) (*Kubernetes, error) {
 	restCfg, err := rest.InClusterConfig()
 	if err != nil {
@@ -59,6 +60,7 @@ func NewClient(cfg config.Config) (*Kubernetes, error) {
 	return &Kubernetes{cfg: cfg, core: core, dynamic: dyn}, nil
 }
 
+// CreateRecord implements the create record operation for this package.
 func (k *Kubernetes) CreateRecord(ctx context.Context, task model.Task) error {
 	workspace := k.cfg.Workspaces[task.WorkspaceID]
 	data, err := json.Marshal(task)
@@ -72,6 +74,7 @@ func (k *Kubernetes) CreateRecord(ctx context.Context, task model.Task) error {
 	return err
 }
 
+// GetRecord implements the get record operation for this package.
 func (k *Kubernetes) GetRecord(ctx context.Context, workspace config.Workspace, id string) (model.Task, error) {
 	cm, err := k.core.CoreV1().ConfigMaps(workspace.Namespace).Get(ctx, recordName(id), metav1.GetOptions{})
 	if err != nil {
@@ -82,6 +85,7 @@ func (k *Kubernetes) GetRecord(ctx context.Context, workspace config.Workspace, 
 	return task, err
 }
 
+// UpdateRecord implements the update record operation for this package.
 func (k *Kubernetes) UpdateRecord(ctx context.Context, workspace config.Workspace, task model.Task) error {
 	data, err := json.Marshal(task)
 	if err != nil {
@@ -97,6 +101,7 @@ func (k *Kubernetes) UpdateRecord(ctx context.Context, workspace config.Workspac
 	return err
 }
 
+// ListActiveRecords implements the list active records operation for this package.
 func (k *Kubernetes) ListActiveRecords(ctx context.Context) ([]model.Task, error) {
 	var result []model.Task
 	seenNamespaces := map[string]struct{}{}
@@ -119,6 +124,7 @@ func (k *Kubernetes) ListActiveRecords(ctx context.Context) ([]model.Task, error
 	return result, nil
 }
 
+// AcquireWorkspace implements the acquire workspace operation for this package.
 func (k *Kubernetes) AcquireWorkspace(ctx context.Context, workspace config.Workspace, taskID string) (bool, error) {
 	leases := k.core.CoordinationV1().Leases(workspace.Namespace)
 	duration := int32((k.cfg.TaskTimeout + 10*time.Minute).Seconds())
@@ -146,6 +152,7 @@ func (k *Kubernetes) AcquireWorkspace(ctx context.Context, workspace config.Work
 	return false, nil
 }
 
+// ReleaseWorkspace implements the release workspace operation for this package.
 func (k *Kubernetes) ReleaseWorkspace(ctx context.Context, workspace config.Workspace, taskID string) error {
 	leases := k.core.CoordinationV1().Leases(workspace.Namespace)
 	lease, err := leases.Get(ctx, lockName(workspace.ID), metav1.GetOptions{})
@@ -165,6 +172,7 @@ func (k *Kubernetes) ReleaseWorkspace(ctx context.Context, workspace config.Work
 	return err
 }
 
+// RenewWorkspace implements the renew workspace operation for this package.
 func (k *Kubernetes) RenewWorkspace(ctx context.Context, workspace config.Workspace, taskID string) error {
 	leases := k.core.CoordinationV1().Leases(workspace.Namespace)
 	lease, err := leases.Get(ctx, lockName(workspace.ID), metav1.GetOptions{})
@@ -180,6 +188,7 @@ func (k *Kubernetes) RenewWorkspace(ctx context.Context, workspace config.Worksp
 	return err
 }
 
+// CreateSnapshotJob implements the create snapshot job operation for this package.
 func (k *Kubernetes) CreateSnapshotJob(ctx context.Context, workspace config.Workspace, task model.Task, restore bool) error {
 	name := snapshotJobName(task.ID, restore)
 	command := fmt.Sprintf("set -eu; mkdir -p /snapshots/%s; tar -C /workspace -cf /snapshots/%s/workspace.tar .", task.ID, task.ID)
@@ -206,6 +215,7 @@ func (k *Kubernetes) CreateSnapshotJob(ctx context.Context, workspace config.Wor
 	return err
 }
 
+// SnapshotJobPhase implements the snapshot job phase operation for this package.
 func (k *Kubernetes) SnapshotJobPhase(ctx context.Context, workspace config.Workspace, task model.Task, restore bool) (JobPhase, string, error) {
 	job, err := k.core.BatchV1().Jobs(workspace.Namespace).Get(ctx, snapshotJobName(task.ID, restore), metav1.GetOptions{})
 	if err != nil {
@@ -220,6 +230,7 @@ func (k *Kubernetes) SnapshotJobPhase(ctx context.Context, workspace config.Work
 	return JobPending, "", nil
 }
 
+// CreateChangesJob implements the create changes job operation for this package.
 func (k *Kubernetes) CreateChangesJob(ctx context.Context, workspace config.Workspace, task model.Task) error {
 	name := "changes-" + task.ID
 	command := fmt.Sprintf("set -eu; mkdir -p /baseline; tar -C /baseline -xf /snapshots/%s/workspace.tar; diff -qr /baseline /workspace || true", task.ID)
@@ -238,6 +249,7 @@ func (k *Kubernetes) CreateChangesJob(ctx context.Context, workspace config.Work
 	return err
 }
 
+// ChangesJobPhase implements the changes job phase operation for this package.
 func (k *Kubernetes) ChangesJobPhase(ctx context.Context, workspace config.Workspace, task model.Task) (JobPhase, []string, string, error) {
 	name := "changes-" + task.ID
 	job, err := k.core.BatchV1().Jobs(workspace.Namespace).Get(ctx, name, metav1.GetOptions{})
@@ -267,6 +279,7 @@ func (k *Kubernetes) ChangesJobPhase(ctx context.Context, workspace config.Works
 	return JobSucceeded, files, "", nil
 }
 
+// EnsureAgent implements the ensure agent operation for this package.
 func (k *Kubernetes) EnsureAgent(ctx context.Context, workspace config.Workspace, task model.Task) error {
 	agentID := firstAgentID(task.AgentID)
 	agentName := agentName(workspace.ID, agentID)
@@ -311,6 +324,13 @@ func (k *Kubernetes) EnsureAgent(ctx context.Context, workspace config.Workspace
 		spec["credentials"] = []any{map[string]any{"name": "model-api-key", "secretRef": map[string]any{"name": workspace.ModelSecret, "key": workspace.ModelSecretKey}, "env": workspace.ModelEnvironment}}
 	}
 	if workspace.OpenCodeBaseURL != "" {
+		modelBaseURL := workspace.OpenCodeBaseURL
+		if workspace.ModelMTLS {
+			modelBaseURL = "http://127.0.0.1:9443"
+			podSpec["lifecycle"] = map[string]any{"postStart": map[string]any{"exec": map[string]any{"command": []any{
+				"/bin/sh", "-c", "exec /usr/local/bin/jko-model-mtls-proxy --listen 127.0.0.1:9443 --upstream \"$MODEL_MTLS_UPSTREAM\" >/tmp/model-mtls-proxy.log 2>&1 &",
+			}}}}
+		}
 		modelID := workspace.OpenCodeModel
 		if _, value, found := strings.Cut(modelID, "/"); found {
 			modelID = value
@@ -330,12 +350,16 @@ func (k *Kubernetes) EnsureAgent(ctx context.Context, workspace config.Workspace
 			},
 			"provider": map[string]any{"model-proxy": map[string]any{
 				"npm": "@ai-sdk/openai-compatible", "name": "Internal model proxy",
-				"options": map[string]any{"baseURL": workspace.OpenCodeBaseURL},
+				"options": map[string]any{"baseURL": modelBaseURL},
 				"models":  allowedModelObjects(workspace.AllowedModels, modelID),
 			}},
 		}
 	}
 	applyAgentCustomization(spec, workspace, custom)
+	if workspace.ModelMTLS {
+		environment, _ := podSpec["extraEnv"].([]any)
+		podSpec["extraEnv"] = append(environment, map[string]any{"name": "MODEL_MTLS_UPSTREAM", "value": workspace.OpenCodeBaseURL})
+	}
 	if workspace.ModelProxyURL != "" {
 		spec["proxy"] = map[string]any{"httpProxy": workspace.ModelProxyURL, "httpsProxy": workspace.ModelProxyURL, "noProxy": "localhost,127.0.0.1,.svc,.cluster.local"}
 	}
@@ -371,6 +395,7 @@ func (k *Kubernetes) EnsureAgent(ctx context.Context, workspace config.Workspace
 	return err
 }
 
+// AgentRolloutReady implements the agent rollout ready operation for this package.
 func (k *Kubernetes) AgentRolloutReady(ctx context.Context, workspace config.Workspace, agentID string) (bool, error) {
 	configured, err := k.GetAgentConfig(ctx, workspace, agentID)
 	if err != nil {
@@ -404,6 +429,7 @@ func (k *Kubernetes) AgentRolloutReady(ctx context.Context, workspace config.Wor
 	return deployment.Spec.Template.Annotations["mediator.kubeopencode.io/environment-hash"] == environmentHash(configured.Environment), nil
 }
 
+// GetRegistry implements the get registry operation for this package.
 func (k *Kubernetes) GetRegistry(ctx context.Context, workspace config.Workspace) (model.Registry, error) {
 	resource, err := k.dynamic.Resource(registryGVR).Namespace(workspace.Namespace).Get(ctx, workspace.Registry, metav1.GetOptions{})
 	if err != nil {
@@ -437,6 +463,7 @@ func (k *Kubernetes) GetRegistry(ctx context.Context, workspace config.Workspace
 	return result, nil
 }
 
+// resolveRegistryAssets implements the resolve registry assets operation for this package.
 func (k *Kubernetes) resolveRegistryAssets(ctx context.Context, workspace config.Workspace, value *model.AgentConfig) error {
 	registry, err := k.GetRegistry(ctx, workspace)
 	if err != nil {
@@ -483,8 +510,13 @@ func (k *Kubernetes) resolveRegistryAssets(ctx context.Context, workspace config
 	return nil
 }
 
+// stringValue implements the string value operation for this package.
 func stringValue(value any) string { result, _ := value.(string); return result }
-func boolValue(value any) bool     { result, _ := value.(bool); return result }
+
+// boolValue implements the bool value operation for this package.
+func boolValue(value any) bool { result, _ := value.(bool); return result }
+
+// int64Pointer implements the int64 pointer operation for this package.
 func int64Pointer(value any) *int64 {
 	switch number := value.(type) {
 	case int64:
@@ -495,6 +527,8 @@ func int64Pointer(value any) *int64 {
 	}
 	return nil
 }
+
+// stringSlice implements the string slice operation for this package.
 func stringSlice(value any) []string {
 	items, _ := value.([]any)
 	result := make([]string, 0, len(items))
@@ -506,6 +540,7 @@ func stringSlice(value any) []string {
 	return result
 }
 
+// ListAgentConfigs implements the list agent configs operation for this package.
 func (k *Kubernetes) ListAgentConfigs(ctx context.Context, workspace config.Workspace) ([]model.AgentConfig, error) {
 	items, err := k.core.CoreV1().ConfigMaps(workspace.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/managed-by=" + managedBy + ",mediator.kubeopencode.io/workspace-id=" + safeLabel(workspace.ID) + ",mediator.kubeopencode.io/config-kind=agent"})
 	if err != nil {
@@ -532,6 +567,7 @@ func (k *Kubernetes) ListAgentConfigs(ctx context.Context, workspace config.Work
 	return result, nil
 }
 
+// GetAgentConfig implements the get agent config operation for this package.
 func (k *Kubernetes) GetAgentConfig(ctx context.Context, workspace config.Workspace, agentID string) (model.AgentConfig, error) {
 	agentID = firstAgentID(agentID)
 	cm, err := k.core.CoreV1().ConfigMaps(workspace.Namespace).Get(ctx, agentConfigName(workspace.ID, agentID), metav1.GetOptions{})
@@ -548,6 +584,7 @@ func (k *Kubernetes) GetAgentConfig(ctx context.Context, workspace config.Worksp
 	return result, nil
 }
 
+// SetAgentConfig implements the set agent config operation for this package.
 func (k *Kubernetes) SetAgentConfig(ctx context.Context, workspace config.Workspace, agentID string, value model.AgentConfig) error {
 	agentID = firstAgentID(agentID)
 	value.ID = agentID
@@ -597,6 +634,7 @@ func (k *Kubernetes) SetAgentConfig(ctx context.Context, workspace config.Worksp
 	return err
 }
 
+// DeleteAgent implements the delete agent operation for this package.
 func (k *Kubernetes) DeleteAgent(ctx context.Context, workspace config.Workspace, agentID string) error {
 	agentID = firstAgentID(agentID)
 	resource := k.dynamic.Resource(agentGVR).Namespace(workspace.Namespace)
@@ -655,6 +693,7 @@ func (k *Kubernetes) DeleteWorkspaceResources(ctx context.Context, workspace con
 	return nil
 }
 
+// CreateKubeTask implements the create kube task operation for this package.
 func (k *Kubernetes) CreateKubeTask(ctx context.Context, workspace config.Workspace, task model.Task) error {
 	description := "The authorized project root is /workspace/project. Work only inside that directory. Treat it as the project root and do not modify /workspace outside project.\n\nUser request:\n" + task.Description
 	obj := &unstructured.Unstructured{Object: map[string]any{
@@ -669,6 +708,7 @@ func (k *Kubernetes) CreateKubeTask(ctx context.Context, workspace config.Worksp
 	return err
 }
 
+// KubeTaskPhase implements the kube task phase operation for this package.
 func (k *Kubernetes) KubeTaskPhase(ctx context.Context, workspace config.Workspace, task model.Task) (model.Phase, string, []string, error) {
 	obj, err := k.dynamic.Resource(taskGVR).Namespace(workspace.Namespace).Get(ctx, task.KubeTaskName, metav1.GetOptions{})
 	if err != nil {
@@ -691,6 +731,7 @@ func (k *Kubernetes) KubeTaskPhase(ctx context.Context, workspace config.Workspa
 	}
 }
 
+// TaskOutput implements the task output operation for this package.
 func (k *Kubernetes) TaskOutput(ctx context.Context, workspace config.Workspace, task model.Task) (string, error) {
 	pods, err := k.core.CoreV1().Pods(workspace.Namespace).List(ctx, metav1.ListOptions{LabelSelector: fields.OneTermEqualSelector("kubeopencode.io/task", task.KubeTaskName).String()})
 	if err != nil {
@@ -712,6 +753,7 @@ func (k *Kubernetes) TaskOutput(ctx context.Context, workspace config.Workspace,
 	return string(data), nil
 }
 
+// DeleteKubeTask implements the delete kube task operation for this package.
 func (k *Kubernetes) DeleteKubeTask(ctx context.Context, workspace config.Workspace, task model.Task) error {
 	err := k.dynamic.Resource(taskGVR).Namespace(workspace.Namespace).Delete(ctx, task.KubeTaskName, metav1.DeleteOptions{})
 	if apierrors.IsNotFound(err) {
@@ -720,6 +762,7 @@ func (k *Kubernetes) DeleteKubeTask(ctx context.Context, workspace config.Worksp
 	return err
 }
 
+// jobLogs implements the job logs operation for this package.
 func (k *Kubernetes) jobLogs(ctx context.Context, namespace, jobName string) string {
 	pods, err := k.core.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{LabelSelector: fields.OneTermEqualSelector("job-name", jobName).String()})
 	if err != nil || len(pods.Items) == 0 {
@@ -734,23 +777,34 @@ func (k *Kubernetes) jobLogs(ctx context.Context, namespace, jobName string) str
 	return string(data)
 }
 
+// baseLabels implements the base labels operation for this package.
 func baseLabels(task model.Task) map[string]string {
 	return map[string]string{"app.kubernetes.io/managed-by": managedBy, "mediator.kubeopencode.io/task-id": task.ID, "mediator.kubeopencode.io/owner": ownerLabel(task.Owner), "mediator.kubeopencode.io/workspace-id": safeLabel(task.WorkspaceID), "mediator.kubeopencode.io/phase": strings.ToLower(string(task.Phase))}
 }
+
+// recordName implements the record name operation for this package.
 func recordName(id string) string { return "mediator-task-" + id }
-func lockName(id string) string   { return "workspace-" + safeName(id) }
+
+// lockName implements the lock name operation for this package.
+func lockName(id string) string { return "workspace-" + safeName(id) }
+
+// agentName implements the agent name operation for this package.
 func agentName(workspaceID, agentID string) string {
 	if firstAgentID(agentID) == "default" {
 		return "vscode-" + safeName(workspaceID)
 	}
 	return "vscode-" + safeName(workspaceID) + "-" + safeName(agentID)
 }
+
+// agentConfigName implements the agent config name operation for this package.
 func agentConfigName(workspaceID, agentID string) string {
 	if firstAgentID(agentID) == "default" {
 		return "mediator-agent-config-" + safeName(workspaceID)
 	}
 	return "mediator-agent-config-" + safeName(workspaceID) + "-" + safeName(agentID)
 }
+
+// firstAgentID implements the first agent id operation for this package.
 func firstAgentID(value string) string {
 	if value == "" {
 		return "default"
@@ -758,6 +812,7 @@ func firstAgentID(value string) string {
 	return value
 }
 
+// applyAgentCustomization implements the apply agent customization operation for this package.
 func applyAgentCustomization(spec map[string]any, workspace config.Workspace, value model.AgentConfig) {
 	profile := strings.TrimSpace(value.Profile)
 	if profile == "" {
@@ -853,6 +908,7 @@ func applyAgentCustomization(spec map[string]any, workspace config.Workspace, va
 	}
 }
 
+// allowedModelObjects implements the allowed model objects operation for this package.
 func allowedModelObjects(models []string, fallback string) map[string]any {
 	if len(models) == 0 {
 		models = []string{fallback}
@@ -868,6 +924,7 @@ func allowedModelObjects(models []string, fallback string) map[string]any {
 	return result
 }
 
+// contains implements the contains operation for this package.
 func contains(values []string, wanted string) bool {
 	for _, value := range values {
 		if value == wanted {
@@ -876,12 +933,16 @@ func contains(values []string, wanted string) bool {
 	}
 	return false
 }
+
+// snapshotJobName implements the snapshot job name operation for this package.
 func snapshotJobName(id string, restore bool) string {
 	if restore {
 		return "restore-" + id
 	}
 	return "snapshot-" + id
 }
+
+// safeName implements the safe name operation for this package.
 func safeName(value string) string {
 	value = strings.ToLower(value)
 	var b strings.Builder
@@ -894,6 +955,8 @@ func safeName(value string) string {
 	}
 	return strings.Trim(b.String(), "-")
 }
+
+// safeLabel implements the safe label operation for this package.
 func safeLabel(value string) string {
 	value = safeName(value)
 	if len(value) > 63 {
@@ -901,6 +964,8 @@ func safeLabel(value string) string {
 	}
 	return value
 }
+
+// ownerLabel implements the owner label operation for this package.
 func ownerLabel(value string) string {
 	hash := sha256.Sum256([]byte(value))
 	suffix := hex.EncodeToString(hash[:6])
@@ -913,6 +978,8 @@ func ownerLabel(value string) string {
 	}
 	return value + "-" + suffix
 }
+
+// resourceOwnedBy implements the resource owned by operation for this package.
 func resourceOwnedBy(labels, annotations map[string]string, owner string) bool {
 	label := labels["mediator.kubeopencode.io/owner"]
 	if label == ownerLabel(owner) {
@@ -920,32 +987,48 @@ func resourceOwnedBy(labels, annotations map[string]string, owner string) bool {
 	}
 	return label == safeName(owner) && annotations["mediator.kubeopencode.io/jupyterhub-username"] == owner
 }
+
+// environmentHash implements the environment hash operation for this package.
 func environmentHash(environment map[string]string) string {
 	data, _ := json.Marshal(environment)
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:12])
 }
-func boolPtr(v bool) *bool    { return &v }
+
+// boolPtr implements the bool ptr operation for this package.
+func boolPtr(v bool) *bool { return &v }
+
+// int64Ptr implements the int64 ptr operation for this package.
 func int64Ptr(v int64) *int64 { return &v }
+
+// effectiveID implements the effective id operation for this package.
 func effectiveID(v int64) int64 {
 	if v == 0 {
 		return 1000
 	}
 	return v
 }
+
+// quantityPtr implements the quantity ptr operation for this package.
 func quantityPtr(value string) *resource.Quantity {
 	quantity := resource.MustParse(value)
 	return &quantity
 }
+
+// restrictedSecurityContext implements the restricted security context operation for this package.
 func restrictedSecurityContext() *corev1.SecurityContext {
 	return &corev1.SecurityContext{AllowPrivilegeEscalation: boolPtr(false), ReadOnlyRootFilesystem: boolPtr(true), Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
 }
+
+// resourceRequirements implements the resource requirements operation for this package.
 func resourceRequirements(cfg config.Config) corev1.ResourceRequirements {
 	return corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
 		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi"), corev1.ResourceEphemeralStorage: resource.MustParse(cfg.EphemeralLimit)},
 	}
 }
+
+// stringMapAny implements the string map any operation for this package.
 func stringMapAny(values map[string]string) map[string]any {
 	result := make(map[string]any, len(values))
 	for key, value := range values {
@@ -953,6 +1036,8 @@ func stringMapAny(values map[string]string) map[string]any {
 	}
 	return result
 }
+
+// taskConditionMessage implements the task condition message operation for this package.
 func taskConditionMessage(obj *unstructured.Unstructured) string {
 	conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
 	for i := len(conditions) - 1; i >= 0; i-- {
@@ -964,6 +1049,8 @@ func taskConditionMessage(obj *unstructured.Unstructured) string {
 	}
 	return ""
 }
+
+// conditionReason implements the condition reason operation for this package.
 func conditionReason(obj *unstructured.Unstructured, reasons ...string) bool {
 	conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
 	for _, item := range conditions {
@@ -981,6 +1068,7 @@ func conditionReason(obj *unstructured.Unstructured, reasons ...string) bool {
 	return false
 }
 
+// changedPath implements the changed path operation for this package.
 func changedPath(line string) string {
 	line = strings.TrimSpace(line)
 	if strings.HasPrefix(line, "Files ") && strings.HasSuffix(line, " differ") {

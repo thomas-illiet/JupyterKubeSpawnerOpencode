@@ -30,10 +30,12 @@ type cachedIdentity struct {
 	expiresAt time.Time
 }
 
+// NewJupyterHub implements the new jupyter hub operation for this package.
 func NewJupyterHub(url string, timeout time.Duration) *JupyterHub {
 	return &JupyterHub{url: url, client: &http.Client{Timeout: timeout}, cache: make(map[[32]byte]cachedIdentity)}
 }
 
+// Authenticate implements the authenticate operation for this package.
 func (j *JupyterHub) Authenticate(ctx context.Context, authorization string) (string, error) {
 	if !strings.HasPrefix(authorization, "Bearer ") || len(strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer "))) < 16 {
 		return "", ErrUnauthorized
