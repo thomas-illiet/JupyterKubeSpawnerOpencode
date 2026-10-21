@@ -12,8 +12,8 @@
   "capabilities": { "untrustedWorkspaces": { "supported": true } },
   "contributes": {
     "commands": [
-      { "command": "kubeOpenCode.openTerminal", "title": "OpenCloud: Open interactive terminal" },
-      { "command": "kubeOpenCode.refreshAgents", "title": "OpenCloud: Refresh Agents" }
+      { "command": "kubeOpenCode.openTerminal", "title": "OpenCloud: Open interactive terminal", "icon": "$(terminal)" },
+      { "command": "kubeOpenCode.refreshAgents", "title": "OpenCloud: Refresh Agents", "icon": "$(refresh)" }
     ],
     "viewsContainers": {
       "activitybar": [{ "id": "kubeOpenCode", "title": "OpenCloud", "icon": "media/icon.svg" }]

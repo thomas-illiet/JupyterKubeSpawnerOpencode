@@ -35,6 +35,8 @@ type Workspace struct {
 	RunAsGroup       int64    `json:"runAsGroup,omitempty"`
 	FSGroup          int64    `json:"fsGroup,omitempty"`
 	ModelProxyURL    string   `json:"modelProxyUrl,omitempty"`
+	Registry         string   `json:"registry"`
+	RequiredSkills   []string `json:"requiredSkills,omitempty"`
 }
 
 type Config struct {
@@ -145,8 +147,18 @@ func validateWorkspace(workspace Workspace) error {
 	if len(workspace.ID) > 50 || !regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`).MatchString(workspace.ID) {
 		return fmt.Errorf("workspace id %q must be a lowercase DNS label of at most 50 characters", workspace.ID)
 	}
-	if workspace.ID == "" || workspace.Owner == "" || workspace.Namespace == "" || workspace.PVC == "" || workspace.SnapshotPVC == "" {
+	if workspace.ID == "" || workspace.Owner == "" || workspace.Namespace == "" || workspace.PVC == "" || workspace.SnapshotPVC == "" || workspace.Registry == "" {
 		return fmt.Errorf("workspace %q is missing a required field", workspace.ID)
+	}
+	if len(workspace.RequiredSkills) == 0 {
+		return fmt.Errorf("workspace %q must define at least one required skill", workspace.ID)
+	}
+	seenSkills := map[string]bool{}
+	for _, skill := range workspace.RequiredSkills {
+		if !regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`).MatchString(skill) || len(skill) > 63 || seenSkills[skill] {
+			return fmt.Errorf("workspace %q has invalid or duplicate required skill %q", workspace.ID, skill)
+		}
+		seenSkills[skill] = true
 	}
 	if workspace.SubPath == "" || filepath.IsAbs(workspace.SubPath) || strings.Contains(workspace.SubPath, "..") {
 		return fmt.Errorf("workspace %q has unsafe subPath %q", workspace.ID, workspace.SubPath)

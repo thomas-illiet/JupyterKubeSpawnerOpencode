@@ -38,4 +38,5 @@ type Client interface {
 	DeleteAgent(context.Context, config.Workspace, string) error
 	DeleteWorkspaceResources(context.Context, config.Workspace) error
 	AgentRolloutReady(context.Context, config.Workspace, string) (bool, error)
+	GetRegistry(context.Context, config.Workspace) (model.Registry, error)
 }

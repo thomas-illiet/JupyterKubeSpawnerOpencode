@@ -2,8 +2,14 @@
 
 Configuration-only VS Code/code-server extension for owned OpenCloud Agents.
 It supports Agent selection, create/update/delete, persistent instructions,
-allow-listed models, public Git skill repositories, and opening the packaged
-terminal launcher.
+allow-listed models, platform Registry skills/plugins, up to five validated
+public Git skill repositories per Agent, and opening the packaged terminal
+launcher.
+
+Registry assets are managed through a responsive searchable dialog embedded in
+the extension. The same in-extension dialog foundation handles Agent creation,
+deletion, and unsaved-change confirmations, with keyboard focus contained in
+the active task.
 
 It intentionally does not submit Tasks, display Task logs, store tokens, edit
 PVC/namespace settings, accept model credentials, or expose an OpenCode server

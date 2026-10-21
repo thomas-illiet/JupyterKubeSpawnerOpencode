@@ -73,7 +73,10 @@ or environment values.
   required.
 - `ReadWriteOnce` behavior varies by CSI driver and topology. Prefer RWX or prove
   simultaneous mounts on the target cluster.
-- Public Git skills execute as instructions/code in the Agent trust boundary.
+- Registry skills, custom Git skills, and npm plugins execute inside the Agent
+  trust boundary. Administrators curate Registry entries; users may additionally
+  attach up to five public HTTPS skill repositories without credentials. Required
+  skills are re-applied server-side and cannot be removed by a client payload.
   Pin immutable refs and review their content.
 - KubeOpenCode uses a `v1alpha1` API. An upstream upgrade may alter security or
   schema semantics and requires full revalidation.

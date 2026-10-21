@@ -16,7 +16,8 @@ model tokens, unrestricted Kubernetes access, or access to another workspace.
 - A Go mediator that authenticates JupyterHub users and owns Kubernetes writes.
 - A Helm chart with namespace-scoped RBAC and default-deny NetworkPolicies.
 - A code-server extension for managing up to five Agents, instructions, models,
-  and public Git skill repositories.
+  selecting skills/plugins from a platform-managed KubeOpenCode Registry, and
+  attaching up to five validated public Git skill repositories per Agent.
 - A terminal launcher that selects an Agent, forwards explicitly prefixed
   non-secret variables, allocates a collision-free local port, and starts the
   OpenCloud-branded TUI through a loopback-only authenticated proxy.

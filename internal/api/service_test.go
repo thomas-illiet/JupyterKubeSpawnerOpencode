@@ -33,10 +33,15 @@ type fakeKube struct {
 	output            string
 	agentConfigs      map[string]model.AgentConfig
 	deletedWorkspaces []string
+	registry          model.Registry
 }
 
 func newFakeKube() *fakeKube {
-	return &fakeKube{records: map[string]model.Task{}, locked: map[string]string{}, snapshotPhase: kube.JobPending, agentConfigs: map[string]model.AgentConfig{}}
+	return &fakeKube{records: map[string]model.Task{}, locked: map[string]string{}, snapshotPhase: kube.JobPending, agentConfigs: map[string]model.AgentConfig{}, registry: model.Registry{Name: "platform", Skills: []model.RegistrySkill{{Name: "platform-baseline", Description: "Mandatory platform rules", Source: model.SkillSource{Name: "platform-baseline", Repository: "https://github.com/example/platform-skills.git", Ref: "main", Path: "skills", Names: []string{"baseline"}}}, {Name: "code-review", Source: model.SkillSource{Name: "code-review", Repository: "https://github.com/example/review-skills.git", Ref: "v1"}}}, Plugins: []model.RegistryPlugin{{Name: "safety-net", Plugin: model.PluginSpec{Name: "cc-safety-net@0.8.2", Target: "server"}}}}}
+}
+
+func (f *fakeKube) GetRegistry(context.Context, config.Workspace) (model.Registry, error) {
+	return f.registry, nil
 }
 func (f *fakeKube) CreateRecord(_ context.Context, task model.Task) error {
 	f.mu.Lock()
@@ -160,8 +165,8 @@ func (f *fakeKube) AgentRolloutReady(context.Context, config.Workspace, string) 
 
 func testConfig() config.Config {
 	return config.Config{ReconcileInterval: time.Hour, TaskTimeout: time.Hour, Workspaces: map[string]config.Workspace{
-		"alice-main": {ID: "alice-main", Owner: "alice", Namespace: "jupyter-shared", PVC: "claim-alice", SnapshotPVC: "snapshots-alice", SubPath: "work/alice", ModelSecret: "model-alice", ModelSecretKey: "key", ModelEnvironment: "OPENAI_API_KEY", OpenCodeModel: "model-proxy/auto", AllowedModels: []string{"model-proxy/auto", "model-proxy/code"}},
-		"bob-main":   {ID: "bob-main", Owner: "bob", Namespace: "jupyter-shared", PVC: "claim-bob", SnapshotPVC: "snapshots-bob", SubPath: "work/bob", ModelSecret: "model-bob", ModelSecretKey: "key", ModelEnvironment: "OPENAI_API_KEY"},
+		"alice-main": {ID: "alice-main", Owner: "alice", Namespace: "jupyter-shared", PVC: "claim-alice", SnapshotPVC: "snapshots-alice", SubPath: "work/alice", ModelSecret: "model-alice", ModelSecretKey: "key", ModelEnvironment: "OPENAI_API_KEY", OpenCodeModel: "model-proxy/auto", AllowedModels: []string{"model-proxy/auto", "model-proxy/code"}, Registry: "platform", RequiredSkills: []string{"platform-baseline"}},
+		"bob-main":   {ID: "bob-main", Owner: "bob", Namespace: "jupyter-shared", PVC: "claim-bob", SnapshotPVC: "snapshots-bob", SubPath: "work/bob", ModelSecret: "model-bob", ModelSecretKey: "key", ModelEnvironment: "OPENAI_API_KEY", Registry: "platform", RequiredSkills: []string{"platform-baseline"}},
 	}}
 }
 
@@ -171,6 +176,20 @@ func TestMeRoutesResolveWorkspaceFromAuthenticatedUser(t *testing.T) {
 	response := request(t, service.Handler(), http.MethodGet, "/api/v1/me/agents", nil)
 	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"resourceName":"vscode-alice-main"`)) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestRegistryProjectionMarksRequiredSkillsWithoutExposingSources(t *testing.T) {
+	service := NewService(testConfig(), newFakeKube(), staticAuth{user: "alice"})
+	response := request(t, service.Handler(), http.MethodGet, "/api/v1/me/registry", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("registry status = %d body=%s", response.Code, response.Body.String())
+	}
+	if !bytes.Contains(response.Body.Bytes(), []byte(`"name":"platform-baseline","description":"Mandatory platform rules","required":true`)) {
+		t.Fatalf("required skill is not marked: %s", response.Body.String())
+	}
+	if bytes.Contains(response.Body.Bytes(), []byte("github.com")) || bytes.Contains(response.Body.Bytes(), []byte("cc-safety-net")) {
+		t.Fatalf("registry implementation details leaked: %s", response.Body.String())
 	}
 }
 
@@ -276,18 +295,22 @@ func TestMultipleAgentsCanBeManagedAndTargeted(t *testing.T) {
 func TestAgentSkillSourcesAreValidated(t *testing.T) {
 	client := newFakeKube()
 	service := NewService(testConfig(), client, staticAuth{user: "alice"})
-	valid := map[string]any{"profile": "Alice agent", "instructions": "Use shared skills", "model": "model-proxy/auto", "skillSources": []map[string]any{{"name": "team-skills", "repository": "https://github.com/example/skills.git", "ref": "main", "path": "skills", "names": []string{"code-review"}}}}
+	valid := map[string]any{"profile": "Alice agent", "instructions": "Use shared skills", "model": "model-proxy/auto", "customSkillSources": []map[string]any{{"name": "team-skills", "repository": "https://github.com/example/team-skills.git", "ref": "main"}}, "selectedSkills": []string{"code-review"}, "selectedPlugins": []string{"safety-net"}}
 	accepted := request(t, service.Handler(), http.MethodPut, "/api/v1/workspaces/alice-main/agent", valid)
 	if accepted.Code != http.StatusOK {
 		t.Fatalf("valid skills status = %d body=%s", accepted.Code, accepted.Body.String())
 	}
-	if len(client.agentConfigs["alice-main/default"].SkillSources) != 1 {
-		t.Fatal("skill source was not persisted")
+	if len(client.agentConfigs["alice-main/default"].SkillSources) != 3 || len(client.agentConfigs["alice-main/default"].CustomSkillSources) != 1 || len(client.agentConfigs["alice-main/default"].PluginSpecs) != 1 {
+		t.Fatal("custom source, registry selection, and mandatory skill were not resolved")
 	}
-	invalid := map[string]any{"profile": "Alice agent", "instructions": "", "model": "model-proxy/auto", "skillSources": []map[string]any{{"name": "private", "repository": "https://token@example.com/private.git"}}}
+	invalid := map[string]any{"profile": "Alice agent", "instructions": "", "model": "model-proxy/auto", "selectedSkills": []string{"not-in-registry"}}
 	denied := request(t, service.Handler(), http.MethodPut, "/api/v1/workspaces/alice-main/agent", invalid)
 	if denied.Code != http.StatusBadRequest {
-		t.Fatalf("credential-bearing URL status = %d, want 400", denied.Code)
+		t.Fatalf("unknown registry skill status = %d, want 400", denied.Code)
+	}
+	credentialed := map[string]any{"profile": "Alice agent", "instructions": "", "model": "model-proxy/auto", "customSkillSources": []map[string]any{{"name": "private", "repository": "https://token@github.com/example/private.git"}}}
+	if response := request(t, service.Handler(), http.MethodPut, "/api/v1/workspaces/alice-main/agent", credentialed); response.Code != http.StatusBadRequest {
+		t.Fatalf("credentialed custom repository status = %d, want 400", response.Code)
 	}
 }
 

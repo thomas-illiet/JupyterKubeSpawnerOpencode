@@ -32,6 +32,7 @@ type Service struct {
 	auth        auth.Authenticator
 	mux         *http.ServeMux
 	workMu      sync.Map
+	policyReady sync.Map
 	lifecycleMu sync.RWMutex
 }
 
@@ -50,6 +51,7 @@ func NewService(cfg config.Config, client kube.Client, authenticator auth.Authen
 	s.mux.HandleFunc("POST /api/v1/workspaces/{workspace}/agents/{agent}/tasks", s.createTask)
 	s.mux.HandleFunc("POST /api/v1/workspaces/{workspace}/activity", s.workspaceActivity)
 	s.mux.HandleFunc("GET /api/v1/me/agents", s.listAgentConfigs)
+	s.mux.HandleFunc("GET /api/v1/me/registry", s.getRegistry)
 	s.mux.HandleFunc("POST /api/v1/me/agents", s.createAgentConfig)
 	s.mux.HandleFunc("GET /api/v1/me/agents/{agent}", s.getAgentConfig)
 	s.mux.HandleFunc("PUT /api/v1/me/agents/{agent}", s.updateAgentConfig)
@@ -177,8 +179,17 @@ func (s *Service) saveAgentConfig(w http.ResponseWriter, r *http.Request, worksp
 	request.Profile = strings.TrimSpace(request.Profile)
 	request.Instructions = strings.TrimSpace(request.Instructions)
 	request.Model = strings.TrimSpace(request.Model)
-	if request.Profile == "" || len(request.Profile) > 200 || len(request.Instructions) > 16*1024 || !stringIn(workspace.AllowedModels, request.Model) || !validSkillSources(request.SkillSources) || !validEnvironment(request.Environment) {
+	if request.Profile == "" || len(request.Profile) > 200 || len(request.Instructions) > 16*1024 || !stringIn(workspace.AllowedModels, request.Model) || !validSkillSources(request.CustomSkillSources) || !validEnvironment(request.Environment) {
 		problem(w, http.StatusBadRequest, "invalid_configuration", "Profile, instructions, selected model or environment is invalid")
+		return
+	}
+	registry, err := s.registry(r.Context(), workspace)
+	if err != nil {
+		problem(w, http.StatusServiceUnavailable, "registry_unavailable", "Could not read the platform Registry")
+		return
+	}
+	if !resolveRegistrySelection(workspace, registry, &request) {
+		problem(w, http.StatusBadRequest, "invalid_registry_selection", "Selected skills or plugins are not allowed by the platform Registry")
 		return
 	}
 	active, err := s.kube.ListActiveRecords(r.Context())
@@ -207,6 +218,92 @@ func (s *Service) saveAgentConfig(w http.ResponseWriter, r *http.Request, worksp
 		return
 	}
 	writeJSON(w, status, normalizedAgentConfig(workspace, agentID, request))
+}
+
+func (s *Service) getRegistry(w http.ResponseWriter, r *http.Request) {
+	workspace, ok := s.requestWorkspace(r)
+	if !ok {
+		problem(w, http.StatusNotFound, "workspace_not_found", "Workspace not found")
+		return
+	}
+	registry, err := s.registry(r.Context(), workspace)
+	if err != nil {
+		problem(w, http.StatusServiceUnavailable, "registry_unavailable", "Could not read the platform Registry")
+		return
+	}
+	writeJSON(w, http.StatusOK, registry)
+}
+
+func (s *Service) registry(ctx context.Context, workspace config.Workspace) (model.Registry, error) {
+	registry, err := s.kube.GetRegistry(ctx, workspace)
+	if err != nil {
+		return model.Registry{}, err
+	}
+	required := map[string]bool{}
+	for _, name := range workspace.RequiredSkills {
+		required[name] = true
+	}
+	for i := range registry.Skills {
+		if registry.Skills[i].Name == "" || registry.Skills[i].Source.Repository == "" {
+			return model.Registry{}, errors.New("Registry contains an invalid skill")
+		}
+		registry.Skills[i].Required = required[registry.Skills[i].Name]
+		delete(required, registry.Skills[i].Name)
+	}
+	if len(required) != 0 {
+		return model.Registry{}, errors.New("Registry is missing a required skill")
+	}
+	for _, plugin := range registry.Plugins {
+		if plugin.Name == "" || plugin.Plugin.Name == "" {
+			return model.Registry{}, errors.New("Registry contains an invalid plugin")
+		}
+	}
+	return registry, nil
+}
+
+func resolveRegistrySelection(workspace config.Workspace, registry model.Registry, value *model.AgentConfig) bool {
+	wantedSkills := map[string]bool{}
+	for _, name := range workspace.RequiredSkills {
+		wantedSkills[name] = true
+	}
+	for _, name := range value.SelectedSkills {
+		wantedSkills[name] = true
+	}
+	wantedPlugins := map[string]bool{}
+	for _, name := range value.SelectedPlugins {
+		wantedPlugins[name] = true
+	}
+	if len(wantedSkills) > 50 || len(wantedPlugins) > 50 {
+		return false
+	}
+	value.SelectedSkills, value.SelectedPlugins = nil, nil
+	value.SkillSources = append([]model.SkillSource(nil), value.CustomSkillSources...)
+	value.PluginSpecs = nil
+	sourceNames := map[string]bool{}
+	for _, source := range value.CustomSkillSources {
+		sourceNames[source.Name] = true
+	}
+	for _, skill := range registry.Skills {
+		if wantedSkills[skill.Name] {
+			if sourceNames[skill.Source.Name] {
+				return false
+			}
+			sourceNames[skill.Source.Name] = true
+			value.SelectedSkills = append(value.SelectedSkills, skill.Name)
+			value.SkillSources = append(value.SkillSources, skill.Source)
+			delete(wantedSkills, skill.Name)
+		}
+	}
+	for _, plugin := range registry.Plugins {
+		if wantedPlugins[plugin.Name] {
+			value.SelectedPlugins = append(value.SelectedPlugins, plugin.Name)
+			value.PluginSpecs = append(value.PluginSpecs, plugin.Plugin)
+			delete(wantedPlugins, plugin.Name)
+		}
+	}
+	sort.Strings(value.SelectedSkills)
+	sort.Strings(value.SelectedPlugins)
+	return len(wantedSkills) == 0 && len(wantedPlugins) == 0
 }
 
 var environmentName = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
@@ -342,6 +439,16 @@ func normalizedAgentConfig(workspace config.Workspace, agentID string, value mod
 		value.Model = workspace.OpenCodeModel
 	}
 	value.AllowedModels = append([]string(nil), workspace.AllowedModels...)
+	for _, required := range workspace.RequiredSkills {
+		if !stringIn(value.SelectedSkills, required) {
+			value.SelectedSkills = append(value.SelectedSkills, required)
+		}
+	}
+	sort.Strings(value.SelectedSkills)
+	// Resolved CRD payloads remain mediator-internal. Clients only receive stable
+	// Registry identifiers and cannot discover Secret names or inject sources.
+	value.SkillSources = nil
+	value.PluginSpecs = nil
 	return value
 }
 
@@ -647,6 +754,15 @@ func (s *Service) reconcileAll(ctx context.Context) {
 		slog.Error("list active mediator tasks", "error", err)
 		return
 	}
+	busyWorkspaces := map[string]bool{}
+	for i := range tasks {
+		busyWorkspaces[tasks[i].WorkspaceID] = true
+	}
+	for _, workspace := range s.cfg.Workspaces {
+		if !busyWorkspaces[workspace.ID] {
+			s.reconcileAgentPolicy(ctx, workspace)
+		}
+	}
 	for i := range tasks {
 		task := tasks[i]
 		workspace, exists := s.cfg.Workspaces[task.WorkspaceID]
@@ -665,6 +781,27 @@ func (s *Service) reconcileAll(ctx context.Context) {
 			s.reconcile(ctx, workspace, &task)
 		}()
 	}
+}
+
+func (s *Service) reconcileAgentPolicy(ctx context.Context, workspace config.Workspace) {
+	if _, ready := s.policyReady.Load(workspace.ID); ready {
+		return
+	}
+	values, err := s.kube.ListAgentConfigs(ctx, workspace)
+	if err != nil {
+		slog.Error("list agents for platform policy reconciliation", "workspace_id", workspace.ID, "error", err)
+		return
+	}
+	for _, value := range values {
+		agentID := firstAgentID(value.ID)
+		bootstrap := model.Task{ID: "policy-" + agentID, WorkspaceID: workspace.ID, Owner: workspace.Owner, AgentID: agentID, AgentName: agentName(workspace.ID, agentID), Phase: model.PhaseQueued}
+		if err := s.kube.EnsureAgent(ctx, workspace, bootstrap); err != nil {
+			slog.Error("reconcile platform Registry policy", "workspace_id", workspace.ID, "agent_id", agentID, "error", err)
+			return
+		}
+	}
+	s.policyReady.Store(workspace.ID, true)
+	slog.Info("platform Registry policy reconciled", "workspace_id", workspace.ID, "agents", len(values))
 }
 
 func (s *Service) reconcile(ctx context.Context, workspace config.Workspace, task *model.Task) {

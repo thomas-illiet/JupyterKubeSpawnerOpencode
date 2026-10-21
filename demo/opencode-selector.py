@@ -43,7 +43,7 @@ def sync_environment(agent):
     if environment == (agent.get("environment") or {}):
         return
     print(f"Synchronizing {len(environment)} variable(s) and safely restarting the Agent…", flush=True)
-    updated = {key: agent.get(key) for key in ("profile", "instructions", "model", "skillSources")}
+    updated = {key: agent.get(key) for key in ("profile", "instructions", "model", "customSkillSources", "selectedSkills", "selectedPlugins")}
     updated["environment"] = environment
     mediator_request(f"/api/v1/me/agents/{agent['id']}", "PUT", updated)
     wait_for_agent(agent["id"])

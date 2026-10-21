@@ -35,6 +35,13 @@ Model access uses one of two modes:
 `subPath` must be relative and cannot contain `..`. The snapshot PVC must be
 separate from the workspace PVC so the Agent cannot modify its rollback point.
 
+Every workspace references one namespaced KubeOpenCode `Registry` CR through
+`registry`. `requiredSkills` must contain at least one Registry skill and is an
+administrator policy: the mediator adds these skills to every Agent even when a
+client omits or attempts to remove them. The chart's `registries` values render
+the native `kubeopencode.io/v1alpha1` resources; users receive read-only `get`
+access through the mediator, never Kubernetes access to the Registry itself.
+
 ## Extension settings
 
 | Setting | Source | Sensitive |
@@ -42,9 +49,14 @@ separate from the workspace PVC so the Agent cannot modify its rollback point.
 | `kubeOpenCode.mediatorUrl` | Platform settings | No |
 | `JUPYTERHUB_API_TOKEN` | Process environment | Yes |
 
-Users configure only profile, persistent instructions, an allow-listed model,
-and up to five public HTTPS skill repositories. Repository URLs with embedded
-credentials, query strings, fragments, or unsafe paths are rejected.
+Users configure profile, persistent instructions, an allow-listed model,
+Registry asset identifiers, and up to five public HTTPS Git repositories for
+custom skills. The extension displays skill and plugin metadata returned by
+`GET /api/v1/me/registry`; required skills are checked and disabled. The
+mediator validates custom repository URLs, rejects embedded credentials and
+name collisions, then resolves both sources into `Agent.spec.skills[]`.
+Plugins, plugin options, private repository credentials, and mandatory skills
+remain exclusively administrator-managed through the Registry.
 
 ## Terminal environment forwarding
 

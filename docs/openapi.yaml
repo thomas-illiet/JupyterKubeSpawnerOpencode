@@ -39,6 +39,12 @@ paths:
       responses:
         "201": { description: Agent created }
         "409": { description: Duplicate id, active workspace, or five-Agent limit }
+  /api/v1/me/registry:
+    get:
+      summary: Read the platform-managed KubeOpenCode Registry available to the authenticated workspace
+      responses:
+        "200": { description: Selectable skills and plugins with mandatory skills marked, content: { application/json: { schema: { $ref: "#/components/schemas/Registry" } } } }
+        "503": { description: Registry CR unavailable }
   /api/v1/me/agents/{agent}:
     get:
       summary: Read one owned Agent configuration
@@ -169,10 +175,9 @@ components:
         profile: { type: string, minLength: 1, maxLength: 200 }
         instructions: { type: string, maxLength: 16384 }
         model: { type: string, minLength: 1, maxLength: 200 }
-        skillSources:
-          type: array
-          maxItems: 5
-          items: { $ref: "#/components/schemas/SkillSource" }
+        customSkillSources: { type: array, maxItems: 5, uniqueItems: true, items: { $ref: "#/components/schemas/SkillSource" } }
+        selectedSkills: { type: array, maxItems: 50, uniqueItems: true, items: { type: string } }
+        selectedPlugins: { type: array, maxItems: 50, uniqueItems: true, items: { type: string } }
         environment:
           type: object
           maxProperties: 32
@@ -199,8 +204,12 @@ components:
         model: { type: string }
         skillSources:
           type: array
-          maxItems: 5
+          readOnly: true
           items: { $ref: "#/components/schemas/SkillSource" }
+        customSkillSources: { type: array, maxItems: 5, uniqueItems: true, items: { $ref: "#/components/schemas/SkillSource" } }
+        selectedSkills: { type: array, maxItems: 50, uniqueItems: true, items: { type: string } }
+        selectedPlugins: { type: array, maxItems: 50, uniqueItems: true, items: { type: string } }
+        pluginSpecs: { type: array, readOnly: true, items: { $ref: "#/components/schemas/PluginSpec" } }
         environment:
           type: object
           maxProperties: 32
@@ -208,6 +217,34 @@ components:
           additionalProperties: { type: string, maxLength: 4096 }
         allowedModels: { type: array, items: { type: string } }
         updatedAt: { type: string, format: date-time }
+    Registry:
+      type: object
+      required: [name, skills, plugins]
+      properties:
+        name: { type: string }
+        skills: { type: array, items: { $ref: "#/components/schemas/RegistrySkill" } }
+        plugins: { type: array, items: { $ref: "#/components/schemas/RegistryPlugin" } }
+    RegistrySkill:
+      type: object
+      required: [name, required]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+        required: { type: boolean, description: Platform policy; required skills cannot be deselected }
+    RegistryPlugin:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        tags: { type: array, items: { type: string } }
+    PluginSpec:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, description: Version-pinned npm package specifier }
+        target: { type: string, enum: [server, tui] }
     Task:
       type: object
       required: [id, workspaceId, owner, phase, snapshotName, createdAt, updatedAt]

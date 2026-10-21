@@ -27,6 +27,42 @@ agent:
   memoryLimit: 4Gi
   ephemeralStorageLimit: 4Gi
 
+# Native KubeOpenCode Registry CRs curated by platform administrators.
+registries:
+  - name: platform
+    namespace: jupyter-alice
+    checkInterval: 10m
+    skills:
+      - name: platform-baseline
+        git:
+          repository: https://github.com/kubeopencode/kubeopencode-agent.git
+          ref: main
+          path: .claude/skills
+          names: [github-respond]
+        metadata:
+          description: Mandatory platform baseline
+          tags: [platform, required]
+      - name: slack-respond
+        git:
+          repository: https://github.com/kubeopencode/kubeopencode-agent.git
+          ref: main
+          path: .claude/skills
+          names: [slack-respond]
+        metadata:
+          description: Optional Slack response workflow
+          tags: [collaboration]
+    plugins:
+      - name: safety-net
+        plugin: { name: "cc-safety-net@0.8.2", target: server }
+        metadata:
+          description: Optional destructive-command safety guard
+          tags: [safety]
+      - name: rtk
+        plugin: { name: "openrtk@0.1.0", target: server }
+        metadata:
+          description: RTK command-output compression (requires the RTK binary in the Agent image)
+          tags: [productivity, tokens]
+
 # This list is the authorization source of truth. Do not allow users to edit it.
 workspaces:
   - id: alice-main
@@ -43,6 +79,8 @@ workspaces:
     runAsGroup: 1000
     fsGroup: 1000
     runtimeClassName: ""
+    registry: platform
+    requiredSkills: [platform-baseline]
 
 networkPolicy:
   enabled: true

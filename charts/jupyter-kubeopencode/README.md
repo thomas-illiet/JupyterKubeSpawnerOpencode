@@ -7,8 +7,8 @@ install JupyterHub, KubeOpenCode, PVCs, model Secrets, the extension, or the
 code-server image.
 
 See the repository's `docs/installation.md` before using this chart. Values are
-validated by `values.schema.json`; the `workspaces` list is an authorization
-policy and must be controlled by platform administrators.
+validated by `values.schema.json`; the `workspaces` list and native KubeOpenCode
+`registries` are authorization policy and must be controlled by platform administrators.
 
 ```sh
 helm upgrade --install jupyter-kubeopencode ./charts/jupyter-kubeopencode \

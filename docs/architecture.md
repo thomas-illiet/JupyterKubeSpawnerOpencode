@@ -71,7 +71,8 @@ tested independently; it is not reachable from the extension UI.
 | State | Storage | Owner |
 | --- | --- | --- |
 | Workspace authorization | Helm values rendered as mediator ConfigMap | Platform administrator |
-| Agent profile/instructions/model/skills/safe environment | Per-Agent ConfigMap | Mediator |
+| Agent profile/instructions/model/Registry selections/safe environment | Per-Agent ConfigMap | Mediator |
+| Skill and plugin catalog | Namespaced KubeOpenCode Registry CR | Platform administrator; mediator read-only |
 | Agent desired state | KubeOpenCode Agent CR | Mediator |
 | Model and private Git credentials | Kubernetes Secret | Platform administrator |
 | Workspace files | User PVC subpath | User |

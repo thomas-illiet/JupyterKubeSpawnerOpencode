@@ -6,5 +6,5 @@ version: 0.1.0
 appVersion: "0.1.0"
 annotations:
   kubeopencode.io/tested-version: "v0.1.9"
-  kubeopencode.io/tested-commit: "593d734f0eff396146da15c82efe545b695102b7"
+  kubeopencode.io/tested-commit: "a54986bff8c25d974670953ca8ec4882e3964186"
 

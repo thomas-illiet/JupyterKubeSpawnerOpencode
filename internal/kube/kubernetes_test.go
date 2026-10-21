@@ -81,9 +81,29 @@ func TestChangedPath(t *testing.T) {
 	}
 }
 
+func TestGetRegistryReadsNativeKubeOpenCodeAssets(t *testing.T) {
+	registry := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "kubeopencode.io/v1alpha1", "kind": "Registry",
+		"metadata": map[string]any{"name": "platform", "namespace": "shared"},
+		"spec": map[string]any{
+			"skills":  []any{map[string]any{"name": "baseline", "git": map[string]any{"repository": "https://example.test/skills.git", "ref": "v1", "names": []any{"secure-defaults"}, "secretRef": map[string]any{"name": "git-readonly"}}, "metadata": map[string]any{"description": "Required baseline", "tags": []any{"security"}}}},
+			"plugins": []any{map[string]any{"name": "safety", "plugin": map[string]any{"name": "cc-safety-net@0.8.2", "target": "server"}}},
+		},
+	}}
+	dynamic := fake.NewSimpleDynamicClient(runtime.NewScheme(), registry)
+	client := &Kubernetes{dynamic: dynamic}
+	got, err := client.GetRegistry(context.Background(), config.Workspace{Namespace: "shared", Registry: "platform"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Skills) != 1 || got.Skills[0].Source.SecretRef != "git-readonly" || len(got.Plugins) != 1 || got.Plugins[0].Plugin.Target != "server" {
+		t.Fatalf("unexpected Registry projection: %#v", got)
+	}
+}
+
 func TestApplyAgentCustomizationAddsExternalSkills(t *testing.T) {
 	spec := map[string]any{"podSpec": map[string]any{}}
-	applyAgentCustomization(spec, config.Workspace{ID: "alice-main", OpenCodeModel: "proxy/auto", AllowedModels: []string{"proxy/auto"}}, model.AgentConfig{Profile: "Reviewer", Model: "proxy/auto", SkillSources: []model.SkillSource{{Name: "team-skills", Repository: "https://github.com/example/skills.git", Ref: "main", Path: "skills", Names: []string{"review"}}}})
+	applyAgentCustomization(spec, config.Workspace{ID: "alice-main", OpenCodeModel: "proxy/auto", AllowedModels: []string{"proxy/auto"}}, model.AgentConfig{Profile: "Reviewer", Model: "proxy/auto", SkillSources: []model.SkillSource{{Name: "team-skills", Repository: "https://github.com/example/skills.git", Ref: "main", Path: "skills", Names: []string{"review"}}}, PluginSpecs: []model.PluginSpec{{Name: "cc-safety-net@0.8.2", Target: "server"}}})
 	skills, ok := spec["skills"].([]any)
 	if !ok || len(skills) != 1 {
 		t.Fatalf("unexpected skills: %#v", spec["skills"])
@@ -91,6 +111,10 @@ func TestApplyAgentCustomizationAddsExternalSkills(t *testing.T) {
 	git := skills[0].(map[string]any)["git"].(map[string]any)
 	if git["repository"] != "https://github.com/example/skills.git" {
 		t.Fatalf("unexpected git source: %#v", git)
+	}
+	plugins := spec["plugins"].([]any)
+	if plugins[0].(map[string]any)["name"] != "cc-safety-net@0.8.2" || plugins[0].(map[string]any)["target"] != "server" {
+		t.Fatalf("unexpected plugins: %#v", plugins)
 	}
 	if err := unstructured.SetNestedMap(map[string]any{}, spec, "spec"); err != nil {
 		t.Fatalf("spec is not valid unstructured JSON: %v", err)

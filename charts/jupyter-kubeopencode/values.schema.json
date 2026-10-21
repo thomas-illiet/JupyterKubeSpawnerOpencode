@@ -3,7 +3,7 @@
   "title": "Jupyter KubeOpenCode Helm values",
   "type": "object",
   "additionalProperties": false,
-  "required": ["image", "mediator", "cleanup", "agent", "workspaces", "networkPolicy"],
+  "required": ["image", "mediator", "cleanup", "agent", "registries", "workspaces", "networkPolicy"],
   "properties": {
     "image": {
       "type": "object",
@@ -56,6 +56,11 @@
       "minItems": 1,
       "items": { "$ref": "#/$defs/workspace" }
     },
+    "registries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/registry" }
+    },
     "networkPolicy": {
       "type": "object",
       "additionalProperties": false,
@@ -84,7 +89,7 @@
     "workspace": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "owner", "namespace", "pvc", "subPath", "snapshotPvc"],
+      "required": ["id", "owner", "namespace", "pvc", "subPath", "snapshotPvc", "registry", "requiredSkills"],
       "anyOf": [
         { "required": ["modelSecret", "modelSecretKey", "modelEnvironment"] },
         { "required": ["openCodeBaseUrl", "openCodeModel"] }
@@ -115,7 +120,55 @@
         "runAsUser": { "type": "integer", "minimum": 1 },
         "runAsGroup": { "type": "integer", "minimum": 1 },
         "fsGroup": { "type": "integer", "minimum": 1 }
+        ,"registry": { "$ref": "#/$defs/dnsLabel" }
+        ,"requiredSkills": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/dnsLabel" } }
       }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "namespace", "checkInterval", "skills", "plugins"],
+      "properties": {
+        "name": { "$ref": "#/$defs/dnsLabel" },
+        "namespace": { "$ref": "#/$defs/dnsLabel" },
+        "checkInterval": { "$ref": "#/$defs/duration" },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "git"],
+            "properties": {
+              "name": { "$ref": "#/$defs/dnsLabel" },
+              "git": {
+                "type": "object", "additionalProperties": false, "required": ["repository"],
+                "properties": {
+                  "repository": { "type": "string", "minLength": 1 }, "ref": { "type": "string" }, "path": { "type": "string" },
+                  "names": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+                  "depth": { "type": "integer", "minimum": 0 }, "recurseSubmodules": { "type": "boolean" },
+                  "secretRef": { "type": "object" }
+                }
+              },
+              "metadata": { "$ref": "#/$defs/assetMetadata" }
+            }
+          }
+        },
+        "plugins": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["name", "plugin"],
+            "properties": {
+              "name": { "$ref": "#/$defs/dnsLabel" },
+              "plugin": { "type": "object", "additionalProperties": false, "required": ["name"], "properties": { "name": { "type": "string", "minLength": 1 }, "target": { "enum": ["server", "tui"] } } },
+              "metadata": { "$ref": "#/$defs/assetMetadata" }
+            }
+          }
+        }
+      }
+    },
+    "assetMetadata": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "description": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } }, "requiredCredentials": { "type": "array", "items": { "type": "object" } } }
     }
   }
 }

@@ -1,0 +1,17 @@
+{{- range .Values.registries }}
+---
+apiVersion: kubeopencode.io/v1alpha1
+kind: Registry
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/part-of: jupyter-kubeopencode
+spec:
+  checkInterval: {{ .checkInterval | quote }}
+  skills:
+    {{- toYaml .skills | nindent 4 }}
+  plugins:
+    {{- toYaml .plugins | nindent 4 }}
+{{- end }}

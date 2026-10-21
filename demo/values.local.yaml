@@ -11,6 +11,33 @@ mediator:
   taskTimeout: 15m
   reconcileInterval: 1s
 
+registries:
+  - name: platform
+    namespace: vscode-hub
+    checkInterval: 10m
+    skills:
+      - name: platform-baseline
+        git:
+          repository: https://github.com/kubeopencode/kubeopencode-agent.git
+          ref: main
+          path: .claude/skills
+          names: [github-respond]
+        metadata: { description: Mandatory demo baseline, tags: [platform, required] }
+      - name: slack-respond
+        git:
+          repository: https://github.com/kubeopencode/kubeopencode-agent.git
+          ref: main
+          path: .claude/skills
+          names: [slack-respond]
+        metadata: { description: Optional Slack response workflow, tags: [collaboration] }
+    plugins:
+      - name: safety-net
+        plugin: { name: "cc-safety-net@0.8.2", target: server }
+        metadata: { description: Optional destructive-command safety guard, tags: [safety] }
+      - name: rtk
+        plugin: { name: "openrtk@0.1.0", target: server }
+        metadata: { description: RTK command-output compression, tags: [productivity, tokens] }
+
 workspaces:
   - id: alice-main
     owner: alice
@@ -20,11 +47,14 @@ workspaces:
     snapshotPvc: claim-alice-kubeopencode-snapshots
     openCodeBaseUrl: http://knative-opencode-model-proxy.opencode.svc.cluster.local
     openCodeModel: model-proxy/auto
+    executorImage: jko-agent:demo
     allowedModels:
       - model-proxy/auto
     runAsUser: 1000
     runAsGroup: 100
     fsGroup: 100
+    registry: platform
+    requiredSkills: [platform-baseline]
 
 # Docker Desktop demo only. Production must enable this and use an approved
 # egress/model proxy as documented by the main chart.

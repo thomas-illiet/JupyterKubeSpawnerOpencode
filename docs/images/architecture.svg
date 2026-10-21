@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
   <title id="title">Jupyter KubeOpenCode architecture</title>
-  <desc id="desc">Browser and code-server connect through a JupyterHub-authenticated mediator relay to an isolated KubeOpenCode Agent.</desc>
+  <desc id="desc">Browser and code-server select platform Registry assets through a JupyterHub-authenticated mediator relay to an isolated KubeOpenCode Agent.</desc>
   <defs>
     <style>
       .bg{fill:#f8fafc}.zone{fill:#fff;stroke:#94a3b8;stroke-width:2}.trusted{fill:#ecfeff;stroke:#0891b2;stroke-width:2}.user{fill:#eff6ff;stroke:#2563eb;stroke-width:2}.agent{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2}.store{fill:#fff7ed;stroke:#ea580c;stroke-width:2}.label{font:600 18px system-ui,sans-serif;fill:#0f172a}.small{font:14px system-ui,sans-serif;fill:#334155}.zoneLabel{font:700 16px system-ui,sans-serif;fill:#475569}.line{stroke:#334155;stroke-width:2;fill:none;marker-end:url(#arrow)}.control{stroke:#0891b2}.interactive{stroke:#7c3aed}.dash{stroke-dasharray:8 6}
@@ -16,7 +16,7 @@
   <rect class="user" x="65" y="255" width="270" height="130" rx="12"/><text class="label" x="200" y="290" text-anchor="middle">code-server</text><text class="small" x="200" y="316" text-anchor="middle">Agent configuration extension</text><text class="small" x="200" y="340" text-anchor="middle">terminal: opencode → mediator</text><text class="small" x="200" y="364" text-anchor="middle">no Kubernetes token</text>
   <rect class="store" x="65" y="455" width="270" height="85" rx="12"/><text class="label" x="200" y="488" text-anchor="middle">Workspace PVC</text><text class="small" x="200" y="516" text-anchor="middle">one authorised subPath</text>
 
-  <rect class="trusted" x="450" y="120" width="270" height="105" rx="12"/><text class="label" x="585" y="154" text-anchor="middle">Mediator API</text><text class="small" x="585" y="180" text-anchor="middle">authentication + authorization</text><text class="small" x="585" y="204" text-anchor="middle">validation + Kubernetes writes</text>
+  <rect class="trusted" x="450" y="120" width="270" height="105" rx="12"/><text class="label" x="585" y="154" text-anchor="middle">Mediator API</text><text class="small" x="585" y="180" text-anchor="middle">auth + Registry selection</text><text class="small" x="585" y="204" text-anchor="middle">required skills + CR writes</text>
   <rect class="trusted" x="450" y="285" width="270" height="95" rx="12"/><text class="label" x="585" y="320" text-anchor="middle">KubeOpenCode</text><text class="small" x="585" y="346" text-anchor="middle">controller + server proxy</text>
   <rect class="trusted" x="450" y="455" width="270" height="85" rx="12"/><text class="label" x="585" y="488" text-anchor="middle">Model gateway</text><text class="small" x="585" y="516" text-anchor="middle">provider egress + credentials</text>
 

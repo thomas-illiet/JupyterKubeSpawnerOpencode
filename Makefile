@@ -5,6 +5,7 @@ GO_CACHE ?= /tmp/jko-go-cache
 GO_MOD_CACHE ?= /tmp/jko-go-mod
 MEDIATOR_IMAGE ?= jupyter-kubeopencode-mediator:demo
 CODE_SERVER_IMAGE ?= jko-code-server:demo
+AGENT_IMAGE ?= jko-agent:demo
 
 .PHONY: help doctor bootstrap test extension helm docs shell hygiene verify images demo-up demo-forward demo-down
 
@@ -46,9 +47,10 @@ hygiene: ## Check formatting, generated files and repository cleanliness rules
 
 verify: test extension helm docs shell hygiene ## Run all repository validation
 
-images: extension ## Build local mediator and code-server images
+images: extension ## Build local mediator, code-server, and RTK-enabled Agent images
 	docker build --pull -t $(MEDIATOR_IMAGE) .
 	docker build -t $(CODE_SERVER_IMAGE) -f demo/Dockerfile.code-server .
+	docker build -t $(AGENT_IMAGE) -f demo/Dockerfile.agent .
 
 demo-up: ## Build and deploy the reproducible Docker Desktop demo
 	./hack/demo-up.sh

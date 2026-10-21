@@ -30,8 +30,9 @@ import (
 )
 
 var (
-	agentGVR = schema.GroupVersionResource{Group: "kubeopencode.io", Version: "v1alpha1", Resource: "agents"}
-	taskGVR  = schema.GroupVersionResource{Group: "kubeopencode.io", Version: "v1alpha1", Resource: "tasks"}
+	agentGVR    = schema.GroupVersionResource{Group: "kubeopencode.io", Version: "v1alpha1", Resource: "agents"}
+	taskGVR     = schema.GroupVersionResource{Group: "kubeopencode.io", Version: "v1alpha1", Resource: "tasks"}
+	registryGVR = schema.GroupVersionResource{Group: "kubeopencode.io", Version: "v1alpha1", Resource: "registries"}
 )
 
 const managedBy = "jupyter-kubeopencode-mediator"
@@ -303,6 +304,9 @@ func (k *Kubernetes) EnsureAgent(ctx context.Context, workspace config.Workspace
 	if err != nil {
 		return err
 	}
+	if err := k.resolveRegistryAssets(ctx, workspace, &custom); err != nil {
+		return err
+	}
 	if workspace.ModelSecret != "" {
 		spec["credentials"] = []any{map[string]any{"name": "model-api-key", "secretRef": map[string]any{"name": workspace.ModelSecret, "key": workspace.ModelSecretKey}, "env": workspace.ModelEnvironment}}
 	}
@@ -398,6 +402,108 @@ func (k *Kubernetes) AgentRolloutReady(ctx context.Context, workspace config.Wor
 		}
 	}
 	return deployment.Spec.Template.Annotations["mediator.kubeopencode.io/environment-hash"] == environmentHash(configured.Environment), nil
+}
+
+func (k *Kubernetes) GetRegistry(ctx context.Context, workspace config.Workspace) (model.Registry, error) {
+	resource, err := k.dynamic.Resource(registryGVR).Namespace(workspace.Namespace).Get(ctx, workspace.Registry, metav1.GetOptions{})
+	if err != nil {
+		return model.Registry{}, err
+	}
+	result := model.Registry{Name: workspace.Registry, Skills: []model.RegistrySkill{}, Plugins: []model.RegistryPlugin{}}
+	skills, _, _ := unstructured.NestedSlice(resource.Object, "spec", "skills")
+	for _, raw := range skills {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		git, _ := item["git"].(map[string]any)
+		metadata, _ := item["metadata"].(map[string]any)
+		source := model.SkillSource{Name: stringValue(item["name"]), Repository: stringValue(git["repository"]), Ref: stringValue(git["ref"]), Path: stringValue(git["path"]), Names: stringSlice(git["names"]), Depth: int64Pointer(git["depth"]), RecurseSubmodules: boolValue(git["recurseSubmodules"])}
+		if secret, ok := git["secretRef"].(map[string]any); ok {
+			source.SecretRef = stringValue(secret["name"])
+		}
+		result.Skills = append(result.Skills, model.RegistrySkill{Name: source.Name, Description: stringValue(metadata["description"]), Tags: stringSlice(metadata["tags"]), Source: source})
+	}
+	plugins, _, _ := unstructured.NestedSlice(resource.Object, "spec", "plugins")
+	for _, raw := range plugins {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		plugin, _ := item["plugin"].(map[string]any)
+		metadata, _ := item["metadata"].(map[string]any)
+		result.Plugins = append(result.Plugins, model.RegistryPlugin{Name: stringValue(item["name"]), Description: stringValue(metadata["description"]), Tags: stringSlice(metadata["tags"]), Plugin: model.PluginSpec{Name: stringValue(plugin["name"]), Target: stringValue(plugin["target"])}})
+	}
+	return result, nil
+}
+
+func (k *Kubernetes) resolveRegistryAssets(ctx context.Context, workspace config.Workspace, value *model.AgentConfig) error {
+	registry, err := k.GetRegistry(ctx, workspace)
+	if err != nil {
+		return err
+	}
+	wantedSkills := map[string]bool{}
+	for _, name := range value.SelectedSkills {
+		wantedSkills[name] = true
+	}
+	for _, name := range workspace.RequiredSkills {
+		wantedSkills[name] = true
+	}
+	wantedPlugins := map[string]bool{}
+	for _, name := range value.SelectedPlugins {
+		wantedPlugins[name] = true
+	}
+	value.SkillSources = append([]model.SkillSource(nil), value.CustomSkillSources...)
+	value.PluginSpecs, value.SelectedSkills, value.SelectedPlugins = nil, nil, nil
+	sourceNames := map[string]bool{}
+	for _, source := range value.CustomSkillSources {
+		sourceNames[source.Name] = true
+	}
+	for _, skill := range registry.Skills {
+		if wantedSkills[skill.Name] {
+			if sourceNames[skill.Source.Name] {
+				return fmt.Errorf("custom skill source %q conflicts with Registry %q", skill.Source.Name, workspace.Registry)
+			}
+			sourceNames[skill.Source.Name] = true
+			value.SkillSources = append(value.SkillSources, skill.Source)
+			value.SelectedSkills = append(value.SelectedSkills, skill.Name)
+			delete(wantedSkills, skill.Name)
+		}
+	}
+	for _, plugin := range registry.Plugins {
+		if wantedPlugins[plugin.Name] {
+			value.PluginSpecs = append(value.PluginSpecs, plugin.Plugin)
+			value.SelectedPlugins = append(value.SelectedPlugins, plugin.Name)
+			delete(wantedPlugins, plugin.Name)
+		}
+	}
+	if len(wantedSkills) != 0 || len(wantedPlugins) != 0 {
+		return fmt.Errorf("Agent selection references an asset missing from Registry %q", workspace.Registry)
+	}
+	return nil
+}
+
+func stringValue(value any) string { result, _ := value.(string); return result }
+func boolValue(value any) bool     { result, _ := value.(bool); return result }
+func int64Pointer(value any) *int64 {
+	switch number := value.(type) {
+	case int64:
+		return &number
+	case float64:
+		result := int64(number)
+		return &result
+	}
+	return nil
+}
+func stringSlice(value any) []string {
+	items, _ := value.([]any)
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item.(string); ok {
+			result = append(result, text)
+		}
+	}
+	return result
 }
 
 func (k *Kubernetes) ListAgentConfigs(ctx context.Context, workspace config.Workspace) ([]model.AgentConfig, error) {
@@ -657,6 +763,22 @@ func applyAgentCustomization(spec map[string]any, workspace config.Workspace, va
 	if profile == "" {
 		profile = "Jupyter workspace agent for " + workspace.ID
 	}
+	if len(value.PluginSpecs) == 0 {
+		delete(spec, "plugins")
+	} else {
+		plugins := make([]any, 0, len(value.PluginSpecs))
+		for _, plugin := range value.PluginSpecs {
+			item := map[string]any{"name": plugin.Name}
+			if plugin.Target != "" {
+				item["target"] = plugin.Target
+			}
+			if len(plugin.Options) > 0 {
+				item["options"] = plugin.Options
+			}
+			plugins = append(plugins, item)
+		}
+		spec["plugins"] = plugins
+	}
 	spec["profile"] = profile
 	if instructions := strings.TrimSpace(value.Instructions); instructions != "" {
 		spec["contexts"] = []any{map[string]any{
@@ -683,6 +805,15 @@ func applyAgentCustomization(spec map[string]any, workspace config.Workspace, va
 					names[i] = name
 				}
 				git["names"] = names
+			}
+			if source.Depth != nil {
+				git["depth"] = *source.Depth
+			}
+			if source.RecurseSubmodules {
+				git["recurseSubmodules"] = true
+			}
+			if source.SecretRef != "" {
+				git["secretRef"] = map[string]any{"name": source.SecretRef}
 			}
 			skills = append(skills, map[string]any{"name": source.Name, "git": git})
 		}

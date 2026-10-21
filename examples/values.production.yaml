@@ -26,6 +26,28 @@ agent:
   memoryLimit: 4Gi
   ephemeralStorageLimit: 4Gi
 
+registries:
+  - name: platform
+    namespace: jupyter-users
+    checkInterval: 10m
+    skills:
+      - name: platform-baseline
+        git:
+          repository: https://github.com/example/platform-agent-assets.git
+          ref: v1.0.0
+          path: skills
+          names: [security-baseline]
+        metadata:
+          description: Mandatory security and engineering baseline
+          tags: [platform, required]
+    plugins:
+      - name: safety-net
+        plugin: { name: "cc-safety-net@0.8.2", target: server }
+        metadata: { description: Prevents unsafe destructive operations, tags: [safety] }
+      - name: rtk
+        plugin: { name: "openrtk@0.1.0", target: server }
+        metadata: { description: RTK command-output compression; requires RTK in the Agent image, tags: [productivity, tokens] }
+
 workspaces:
   - id: alice-main
     owner: alice
@@ -42,6 +64,8 @@ workspaces:
     fsGroup: 1000
     # Set to gvisor or kata only when that RuntimeClass is installed and tested.
     runtimeClassName: ""
+    registry: platform
+    requiredSkills: [platform-baseline]
   - id: bob-main
     owner: bob
     namespace: jupyter-users
@@ -56,6 +80,8 @@ workspaces:
     runAsGroup: 1001
     fsGroup: 1001
     runtimeClassName: ""
+    registry: platform
+    requiredSkills: [platform-baseline]
 
 networkPolicy:
   enabled: true

@@ -3,23 +3,58 @@ package model
 import "time"
 
 type AgentConfig struct {
-	ID            string            `json:"id"`
-	ResourceName  string            `json:"resourceName"`
-	Profile       string            `json:"profile"`
-	Instructions  string            `json:"instructions"`
-	Model         string            `json:"model"`
-	SkillSources  []SkillSource     `json:"skillSources,omitempty"`
-	Environment   map[string]string `json:"environment,omitempty"`
-	AllowedModels []string          `json:"allowedModels,omitempty"`
-	UpdatedAt     time.Time         `json:"updatedAt,omitempty"`
+	ID                 string            `json:"id"`
+	ResourceName       string            `json:"resourceName"`
+	Profile            string            `json:"profile"`
+	Instructions       string            `json:"instructions"`
+	Model              string            `json:"model"`
+	SkillSources       []SkillSource     `json:"skillSources,omitempty"`
+	CustomSkillSources []SkillSource     `json:"customSkillSources,omitempty"`
+	SelectedSkills     []string          `json:"selectedSkills,omitempty"`
+	SelectedPlugins    []string          `json:"selectedPlugins,omitempty"`
+	PluginSpecs        []PluginSpec      `json:"pluginSpecs,omitempty"`
+	Environment        map[string]string `json:"environment,omitempty"`
+	AllowedModels      []string          `json:"allowedModels,omitempty"`
+	UpdatedAt          time.Time         `json:"updatedAt,omitempty"`
+}
+
+// Registry is the user-safe projection of a KubeOpenCode Registry CR.
+type Registry struct {
+	Name    string           `json:"name"`
+	Skills  []RegistrySkill  `json:"skills"`
+	Plugins []RegistryPlugin `json:"plugins"`
+}
+
+type RegistrySkill struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description,omitempty"`
+	Tags        []string    `json:"tags,omitempty"`
+	Required    bool        `json:"required"`
+	Source      SkillSource `json:"-"`
+}
+
+type RegistryPlugin struct {
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Tags        []string   `json:"tags,omitempty"`
+	Plugin      PluginSpec `json:"-"`
+}
+
+type PluginSpec struct {
+	Name    string         `json:"name"`
+	Target  string         `json:"target,omitempty"`
+	Options map[string]any `json:"options,omitempty"`
 }
 
 type SkillSource struct {
-	Name       string   `json:"name"`
-	Repository string   `json:"repository"`
-	Ref        string   `json:"ref,omitempty"`
-	Path       string   `json:"path,omitempty"`
-	Names      []string `json:"names,omitempty"`
+	Name              string   `json:"name"`
+	Repository        string   `json:"repository"`
+	Ref               string   `json:"ref,omitempty"`
+	Path              string   `json:"path,omitempty"`
+	Names             []string `json:"names,omitempty"`
+	Depth             *int64   `json:"depth,omitempty"`
+	RecurseSubmodules bool     `json:"recurseSubmodules,omitempty"`
+	SecretRef         string   `json:"secretRef,omitempty"`
 }
 
 type Phase string
