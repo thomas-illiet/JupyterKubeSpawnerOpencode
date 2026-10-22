@@ -23,7 +23,7 @@ jobs:
           node-version: 22.14.0
           cache: npm
           cache-dependency-path: vscode-extension/package-lock.json
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.17.3
       - run: npm --prefix vscode-extension ci
