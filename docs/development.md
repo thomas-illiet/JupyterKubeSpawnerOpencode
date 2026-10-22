@@ -21,10 +21,11 @@ or `/tmp` caches and do not write generated assets into source directories.
 | Target | Result |
 | --- | --- |
 | `make test` | Go tests and vet |
+| `make build` | Versioned mediator and attach-proxy binaries in `dist/` |
 | `make extension` | Type-check and package VSIX |
 | `make helm` | Lint and render chart/default/example values |
 | `make verify` | All static/repository checks |
-| `make images` | Build mediator and demo code-server images |
+| `make images` | Build the mediator with provenance/SBOM plus demo images |
 | `make demo-up` | Build and deploy the local demo |
 | `make demo-forward` | Forward code-server to `127.0.0.1:18080` |
 | `make demo-down` | Remove only demo/integration resources |

@@ -10,11 +10,30 @@ paths:
   /healthz:
     get:
       security: []
-      summary: Process liveness and readiness
+      summary: Legacy process liveness alias
       responses:
         "200":
           description: Mediator process is serving
           content: { application/json: { schema: { type: object, properties: { status: { const: ok } } } } }
+  /livez:
+    get:
+      security: []
+      summary: Process liveness
+      responses:
+        "200": { description: Mediator process is serving }
+  /readyz:
+    get:
+      security: []
+      summary: Reconciliation readiness
+      responses:
+        "200": { description: Initial reconciliation completed }
+        "503": { description: Initial reconciliation has not completed }
+  /metrics:
+    get:
+      security: []
+      summary: Credential-free Prometheus metrics
+      responses:
+        "200": { description: Prometheus text exposition }
   /api/v1/admin/users/{user}/resources:
     delete:
       summary: Delete mediator-owned resources for a deleted JupyterHub user

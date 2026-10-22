@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,6 +24,39 @@ func (a staticAuth) Authenticate(context.Context, string) (string, error) {
 		return "", errors.New("unauthorized")
 	}
 	return a.user, nil
+}
+
+func TestHealthEndpointsAndStrictJSON(t *testing.T) {
+	service := NewService(testConfig(), newFakeKube(), staticAuth{user: "alice"})
+
+	live := request(t, service.Handler(), http.MethodGet, "/livez", nil)
+	if live.Code != http.StatusOK {
+		t.Fatalf("live status = %d", live.Code)
+	}
+	ready := request(t, service.Handler(), http.MethodGet, "/readyz", nil)
+	if ready.Code != http.StatusServiceUnavailable || ready.Header().Get("Content-Type") != "application/problem+json" {
+		t.Fatalf("ready status = %d content-type = %q", ready.Code, ready.Header().Get("Content-Type"))
+	}
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/alice-main/tasks", bytes.NewBufferString(`{"description":"one"} {"description":"two"}`))
+	req.Header.Set("Authorization", "Bearer test-token-with-enough-length")
+	service.Handler().ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("trailing JSON status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func FuzzSafeAPIName(f *testing.F) {
+	f.Add("reviewer")
+	f.Add("Agent With Spaces")
+	f.Add("../escape")
+	f.Fuzz(func(t *testing.T, value string) {
+		result := safeAPIName(value)
+		if strings.ContainsAny(result, "_/. ") {
+			t.Fatalf("unsafe normalized value %q", result)
+		}
+	})
 }
 
 type fakeKube struct {

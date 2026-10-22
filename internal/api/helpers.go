@@ -5,6 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -15,10 +19,7 @@ import (
 // authorizedTask loads a task only when it belongs to the authenticated user.
 func (s *Service) authorizedTask(w http.ResponseWriter, r *http.Request) (config.Workspace, model.Task, bool) {
 	user := currentUser(r.Context())
-	for _, workspace := range s.cfg.Workspaces {
-		if workspace.Owner != user {
-			continue
-		}
+	if workspace, exists := s.cfg.WorkspacesByOwner[user]; exists {
 		task, err := s.kube.GetRecord(r.Context(), workspace, r.PathValue("task"))
 		if err == nil && task.Owner == user && task.WorkspaceID == workspace.ID {
 			return workspace, task, true
@@ -73,32 +74,40 @@ func safeAPIName(id string) string {
 }
 
 // decodeJSON decodes one bounded JSON request while rejecting unknown fields.
-func decodeJSON(r *http.Request, target any) error {
-	decoder := json.NewDecoder(http.MaxBytesReader(nilResponseWriter{}, r.Body, 64*1024))
+func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
+	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	return decoder.Decode(target)
+	if err := decoder.Decode(target); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			return fmt.Errorf("request body exceeds %d bytes: %w", maxBytesError.Limit, err)
+		}
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("request body must contain exactly one JSON value")
+		}
+		return err
+	}
+	return nil
 }
-
-type nilResponseWriter struct{}
-
-// Header implements http.ResponseWriter for bounded request decoding.
-func (nilResponseWriter) Header() http.Header { return make(http.Header) }
-
-// Write implements http.ResponseWriter while discarding output.
-func (nilResponseWriter) Write([]byte) (int, error) { return 0, nil }
-
-// WriteHeader implements http.ResponseWriter while discarding status codes.
-func (nilResponseWriter) WriteHeader(int) {}
 
 // writeJSON writes a JSON response with the requested status.
 func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		slog.Error("write JSON response", "error", err)
+	}
 }
 
 // problem writes an RFC 9457-style API error response.
 func problem(w http.ResponseWriter, status int, code, detail string) {
+	w.Header().Set("Content-Type", "application/problem+json")
 	writeJSON(w, status, map[string]any{"type": "about:blank", "title": code, "status": status, "detail": detail})
 }
 

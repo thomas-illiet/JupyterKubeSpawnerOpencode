@@ -1,6 +1,8 @@
 image:
   repository: ghcr.io/example/jupyter-kubeopencode-mediator
   tag: "0.1.0"
+  # Set digest to sha256:... in production to override tag with an immutable image.
+  digest: ""
   pullPolicy: IfNotPresent
 
 mediator:
@@ -10,6 +12,8 @@ mediator:
   snapshotImage: alpine:3.22
   taskTimeout: 1h
   reconcileInterval: 2s
+  logLevel: info
+  logFormat: json
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { cpu: 500m, memory: 512Mi }

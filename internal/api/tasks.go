@@ -30,7 +30,7 @@ func (s *Service) createTask(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Description string `json:"description"`
 	}
-	if err := decodeJSON(r, &request); err != nil || strings.TrimSpace(request.Description) == "" || len(request.Description) > 32*1024 {
+	if err := decodeJSON(w, r, &request); err != nil || strings.TrimSpace(request.Description) == "" || len(request.Description) > 32*1024 {
 		problem(w, http.StatusBadRequest, "invalid_request", "description is required and must be at most 32 KiB")
 		return
 	}
@@ -204,7 +204,7 @@ func (s *Service) workspaceActivity(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Path string `json:"path"`
 	}
-	if err := decodeJSON(r, &request); err != nil || request.Path == "" || path.IsAbs(request.Path) || strings.Contains(request.Path, "..") {
+	if err := decodeJSON(w, r, &request); err != nil || request.Path == "" || path.IsAbs(request.Path) || strings.Contains(request.Path, "..") {
 		problem(w, http.StatusBadRequest, "invalid_path", "A relative workspace path is required")
 		return
 	}

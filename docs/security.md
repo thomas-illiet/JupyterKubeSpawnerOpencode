@@ -56,7 +56,9 @@ escape.
   external providers must be reached through an egress gateway.
 - Production workspaces can enable `modelMTLS`. OpenCode then talks only to a
   loopback proxy in the executor image; that proxy requires TLS 1.3, verifies
-  the embedded gateway CA, and presents an embedded client certificate. The
+  the embedded gateway CA, and presents an embedded client certificate. PEM
+  data is AES-256-GCM-obfuscated at build time so casual text inspection does
+  not expose it, but the decryptor and key are both present in the binary. The
   gateway must reject clients that do not present a certificate signed by its
   client CA. This is defense in depth: a user who can copy the executor binary
   can also copy and reuse its shared private key, so this mechanism is not a

@@ -10,8 +10,13 @@ MTLS_AGENT_IMAGE ?= jko-agent-mtls:production
 MTLS_CLIENT_CERT ?=
 MTLS_CLIENT_KEY ?=
 MTLS_GATEWAY_CA ?=
+DIST_DIR ?= dist
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)
+GO_LDFLAGS := -s -w -buildid= -X github.com/thomas-illiet/jupyter-kubeopencode/internal/version.Version=$(VERSION) -X github.com/thomas-illiet/jupyter-kubeopencode/internal/version.Commit=$(COMMIT) -X github.com/thomas-illiet/jupyter-kubeopencode/internal/version.Date=$(BUILD_DATE)
 
-.PHONY: help doctor bootstrap test extension helm docs shell hygiene verify images agent-mtls-image demo-up demo-forward demo-down
+.PHONY: help doctor bootstrap build test extension helm docs shell hygiene verify images agent-mtls-image demo-up demo-forward demo-down
 
 help: ## List available targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "%-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -23,9 +28,16 @@ bootstrap: ## Install locked extension dependencies and download Go modules
 	npm --prefix vscode-extension ci
 	GOCACHE=$(GO_CACHE) GOMODCACHE=$(GO_MOD_CACHE) go mod download
 
+build: ## Build versioned production Go binaries in dist
+	mkdir -p $(DIST_DIR)
+	CGO_ENABLED=0 GOCACHE=$(GO_CACHE) GOMODCACHE=$(GO_MOD_CACHE) go build -mod=readonly -trimpath -buildvcs=true -ldflags='$(GO_LDFLAGS)' -o $(DIST_DIR)/jupyter-kubeopencode-mediator ./cmd/mediator
+	CGO_ENABLED=0 GOCACHE=$(GO_CACHE) GOMODCACHE=$(GO_MOD_CACHE) go build -mod=readonly -trimpath -buildvcs=true -ldflags='$(GO_LDFLAGS)' -o $(DIST_DIR)/jko-attach-proxy ./cmd/attach-proxy
+
 test: ## Run Go tests and static analysis
+	test -z "$$(gofmt -l cmd internal)"
 	GOCACHE=$(GO_CACHE) GOMODCACHE=$(GO_MOD_CACHE) go test -race ./...
 	GOCACHE=$(GO_CACHE) GOMODCACHE=$(GO_MOD_CACHE) go vet ./...
+	GOCACHE=$(GO_CACHE) GOMODCACHE=$(GO_MOD_CACHE) go build -mod=readonly ./cmd/...
 
 extension: ## Type-check and package the VS Code extension
 	npm --prefix vscode-extension run check
@@ -52,7 +64,7 @@ hygiene: ## Check formatting, generated files and repository cleanliness rules
 verify: test extension helm docs shell hygiene ## Run all repository validation
 
 images: extension ## Build local mediator, code-server, and RTK-enabled Agent images
-	docker build --pull -t $(MEDIATOR_IMAGE) .
+	docker build --pull --provenance=mode=max --sbom=true --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE) -t $(MEDIATOR_IMAGE) .
 	docker build -t $(CODE_SERVER_IMAGE) -f demo/Dockerfile.code-server .
 	docker build -t $(AGENT_IMAGE) -f demo/Dockerfile.agent .
 

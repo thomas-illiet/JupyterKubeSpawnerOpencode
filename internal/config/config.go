@@ -15,6 +15,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+var (
+	workspaceIDPattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	skillNamePattern   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+)
+
 // Workspace describes the administrator-owned runtime boundary for one user.
 type Workspace struct {
 	ID               string   `json:"id"`
@@ -57,7 +62,10 @@ type Config struct {
 	EphemeralLimit     string
 	TaskTimeout        time.Duration
 	CleanupToken       string
+	LogLevel           string
+	LogFormat          string
 	Workspaces         map[string]Workspace
+	WorkspacesByOwner  map[string]Workspace
 }
 
 // NewViper returns an isolated Viper instance configured with mediator defaults
@@ -79,6 +87,8 @@ func NewViper() *viper.Viper {
 	v.SetDefault("agent-ephemeral-storage-limit", "4Gi")
 	v.SetDefault("task-timeout", time.Hour)
 	v.SetDefault("workspaces-file", "/etc/kubeopencode-mediator/workspaces.json")
+	v.SetDefault("log-level", "info")
+	v.SetDefault("log-format", "json")
 	return v
 }
 
@@ -102,6 +112,14 @@ func FromViper(v *viper.Viper) (Config, error) {
 		AgentMemoryLimit:   v.GetString("agent-memory-limit"),
 		EphemeralLimit:     v.GetString("agent-ephemeral-storage-limit"),
 		TaskTimeout:        v.GetDuration("task-timeout"),
+		LogLevel:           strings.ToLower(v.GetString("log-level")),
+		LogFormat:          strings.ToLower(v.GetString("log-format")),
+	}
+	if cfg.LogLevel != "debug" && cfg.LogLevel != "info" && cfg.LogLevel != "warn" && cfg.LogLevel != "error" {
+		return Config{}, errors.New("LOG_LEVEL must be debug, info, warn, or error")
+	}
+	if cfg.LogFormat != "json" && cfg.LogFormat != "text" {
+		return Config{}, errors.New("LOG_FORMAT must be json or text")
 	}
 	for name, value := range map[string]time.Duration{
 		"AUTH_TIMEOUT":       cfg.AuthTimeout,
@@ -151,6 +169,7 @@ func FromViper(v *viper.Viper) (Config, error) {
 		return Config{}, fmt.Errorf("decode workspaces file: %w", err)
 	}
 	cfg.Workspaces = make(map[string]Workspace, len(workspaces))
+	cfg.WorkspacesByOwner = make(map[string]Workspace, len(workspaces))
 	for i := range workspaces {
 		workspace := workspaces[i]
 		if workspace.RunAsUser == 0 {
@@ -171,12 +190,11 @@ func FromViper(v *viper.Viper) (Config, error) {
 		if _, exists := cfg.Workspaces[workspace.ID]; exists {
 			return Config{}, fmt.Errorf("duplicate workspace id %q", workspace.ID)
 		}
-		for _, existing := range cfg.Workspaces {
-			if existing.Owner == workspace.Owner {
-				return Config{}, fmt.Errorf("owner %q must map to exactly one workspace", workspace.Owner)
-			}
+		if _, exists := cfg.WorkspacesByOwner[workspace.Owner]; exists {
+			return Config{}, fmt.Errorf("owner %q must map to exactly one workspace", workspace.Owner)
 		}
 		cfg.Workspaces[workspace.ID] = workspace
+		cfg.WorkspacesByOwner[workspace.Owner] = workspace
 	}
 	if len(cfg.Workspaces) == 0 {
 		return Config{}, errors.New("at least one workspace is required")
@@ -186,7 +204,7 @@ func FromViper(v *viper.Viper) (Config, error) {
 
 // validateWorkspace verifies required fields and storage, identity, model, and Registry constraints.
 func validateWorkspace(workspace Workspace) error {
-	if len(workspace.ID) > 50 || !regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`).MatchString(workspace.ID) {
+	if len(workspace.ID) > 50 || !workspaceIDPattern.MatchString(workspace.ID) {
 		return fmt.Errorf("workspace id %q must be a lowercase DNS label of at most 50 characters", workspace.ID)
 	}
 	if workspace.ID == "" || workspace.Owner == "" || workspace.Namespace == "" || workspace.PVC == "" || workspace.SnapshotPVC == "" || workspace.Registry == "" {
@@ -197,7 +215,7 @@ func validateWorkspace(workspace Workspace) error {
 	}
 	seenSkills := map[string]bool{}
 	for _, skill := range workspace.RequiredSkills {
-		if !regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`).MatchString(skill) || len(skill) > 63 || seenSkills[skill] {
+		if !skillNamePattern.MatchString(skill) || len(skill) > 63 || seenSkills[skill] {
 			return fmt.Errorf("workspace %q has invalid or duplicate required skill %q", workspace.ID, skill)
 		}
 		seenSkills[skill] = true
@@ -218,7 +236,7 @@ func validateWorkspace(workspace Workspace) error {
 			return fmt.Errorf("workspace %q has an invalid allowed model", workspace.ID)
 		}
 	}
-	if workspace.OpenCodeBaseURL != "" && !strings.HasPrefix(workspace.OpenCodeBaseURL, "http://") && !strings.HasPrefix(workspace.OpenCodeBaseURL, "https://") {
+	if workspace.OpenCodeBaseURL != "" && !validHTTPURL(workspace.OpenCodeBaseURL) {
 		return fmt.Errorf("workspace %q has invalid openCodeBaseUrl", workspace.ID)
 	}
 	if workspace.ModelMTLS {
@@ -230,8 +248,18 @@ func validateWorkspace(workspace Workspace) error {
 			return fmt.Errorf("workspace %q modelMTLS requires an executorImage containing jko-model-mtls-proxy", workspace.ID)
 		}
 	}
-	if workspace.ModelProxyURL != "" && !strings.HasPrefix(workspace.ModelProxyURL, "http://") && !strings.HasPrefix(workspace.ModelProxyURL, "https://") {
+	if workspace.ModelProxyURL != "" && !validHTTPURL(workspace.ModelProxyURL) {
 		return fmt.Errorf("workspace %q has invalid modelProxyUrl", workspace.ID)
 	}
 	return nil
+}
+
+// validHTTPURL reports whether value is an absolute HTTP(S) URL without
+// credentials, query parameters, or fragments.
+func validHTTPURL(value string) bool {
+	if strings.ContainsAny(value, "?#") {
+		return false
+	}
+	parsed, err := url.ParseRequestURI(value)
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && parsed.User == nil && parsed.RawQuery == "" && parsed.Fragment == ""
 }

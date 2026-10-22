@@ -1,15 +1,23 @@
 # syntax=docker/dockerfile:1.7
 ARG AGENT_BASE_IMAGE=ghcr.io/kubeopencode/kubeopencode-agent-devbox@sha256:f2b6a3d814bee7a41bca1380f45f61410f8e9e2d29ce363fb8883fc95ce10e0f
 
-FROM golang:1.24-alpine3.22 AS mtls-proxy
+FROM golang:1.24.7-alpine@sha256:fc2cff6625f3c1c92e6c85938ac5bd09034ad0d4bc2dfb08278020b68540dbb5 AS mtls-proxy
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY internal/mtlsproxy ./internal/mtlsproxy
+COPY internal/credentialbundle ./internal/credentialbundle
 COPY cmd/model-mtls-proxy ./cmd/model-mtls-proxy
+COPY cmd/credential-packer ./cmd/credential-packer
 RUN --mount=type=secret,id=model_mtls_client_cert,target=/src/cmd/model-mtls-proxy/certs/client.crt,required=true \
     --mount=type=secret,id=model_mtls_client_key,target=/src/cmd/model-mtls-proxy/certs/client.key,required=true \
     --mount=type=secret,id=model_mtls_gateway_ca,target=/src/cmd/model-mtls-proxy/certs/gateway-ca.crt,required=true \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/jko-model-mtls-proxy ./cmd/model-mtls-proxy
+    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -mod=readonly -trimpath -buildvcs=false -o /tmp/credential-packer ./cmd/credential-packer && \
+    set -- $(/tmp/credential-packer /src/cmd/model-mtls-proxy/certs/client.crt /src/cmd/model-mtls-proxy/certs/client.key /src/cmd/model-mtls-proxy/certs/gateway-ca.crt) && \
+    CGO_ENABLED=0 go build -mod=readonly -trimpath -buildvcs=false \
+    -ldflags="-s -w -buildid= -X main.embeddedCredentialKey=$1 -X main.embeddedCredentialBundle=$2" \
+    -o /out/jko-model-mtls-proxy ./cmd/model-mtls-proxy
 
 FROM rust:1.91-alpine3.22 AS rtk
 ARG RTK_COMMIT=4ef8730cf3a0dea11c8d64a9b90bc0616fe52100

@@ -8,17 +8,18 @@
     "image": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "tag", "pullPolicy"],
+      "required": ["repository", "tag", "digest", "pullPolicy"],
       "properties": {
         "repository": { "type": "string", "minLength": 1 },
         "tag": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^$|^sha256:[a-f0-9]{64}$" },
         "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
       }
     },
     "mediator": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["namespace", "jupyterHubUserURL", "kubeOpenCodeServerURL", "snapshotImage", "taskTimeout", "reconcileInterval", "resources"],
+      "required": ["namespace", "jupyterHubUserURL", "kubeOpenCodeServerURL", "snapshotImage", "taskTimeout", "reconcileInterval", "logLevel", "logFormat", "resources"],
       "properties": {
         "namespace": { "$ref": "#/$defs/dnsLabel" },
         "jupyterHubUserURL": { "type": "string", "pattern": "^https?://" },
@@ -26,6 +27,8 @@
         "snapshotImage": { "type": "string", "minLength": 1 },
         "taskTimeout": { "$ref": "#/$defs/duration" },
         "reconcileInterval": { "$ref": "#/$defs/duration" },
+        "logLevel": { "enum": ["debug", "info", "warn", "error"] },
+        "logFormat": { "enum": ["json", "text"] },
         "resources": { "type": "object" }
       }
     },

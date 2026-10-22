@@ -2,24 +2,25 @@ package main
 
 import (
 	"crypto/tls"
-	"embed"
 	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/thomas-illiet/jupyter-kubeopencode/internal/credentialbundle"
 	"github.com/thomas-illiet/jupyter-kubeopencode/internal/mtlsproxy"
 )
 
-// The production image build overlays these files from BuildKit secrets. The
-// private key is therefore present only inside the resulting static binary.
-//
-//go:embed certs/*
-var embeddedCredentials embed.FS
+// The production image injects an authenticated encrypted bundle through
+// linker variables. This prevents PEM recovery with a text editor or strings;
+// it is obfuscation, not a substitute for gateway-side workload authorization.
+var (
+	embeddedCredentialKey    string
+	embeddedCredentialBundle string
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -35,18 +36,13 @@ func run() error {
 	if *upstream == "" {
 		return errors.New("--upstream is required")
 	}
-	clientPEM, err := fs.ReadFile(embeddedCredentials, "certs/client.crt")
+	clientPEM, keyPEM, caPEM, err := credentialbundle.Open(embeddedCredentialKey, embeddedCredentialBundle)
 	if err != nil {
-		return fmt.Errorf("read embedded client certificate: %w", err)
+		return fmt.Errorf("open embedded mTLS credentials: %w", err)
 	}
-	keyPEM, err := fs.ReadFile(embeddedCredentials, "certs/client.key")
-	if err != nil {
-		return fmt.Errorf("read embedded client key: %w", err)
-	}
-	caPEM, err := fs.ReadFile(embeddedCredentials, "certs/gateway-ca.crt")
-	if err != nil {
-		return fmt.Errorf("read embedded gateway CA: %w", err)
-	}
+	defer credentialbundle.Zero(clientPEM)
+	defer credentialbundle.Zero(keyPEM)
+	defer credentialbundle.Zero(caPEM)
 	certificate, err := tls.X509KeyPair(clientPEM, keyPEM)
 	if err != nil {
 		return fmt.Errorf("parse embedded client identity: %w", err)

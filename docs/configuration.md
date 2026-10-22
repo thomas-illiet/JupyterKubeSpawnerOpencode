@@ -16,6 +16,8 @@ lowercase kebab-case flag, for example `--listen-address` and
 | `KUBEOPENCODE_SERVER_URL` | internal service | Direct KubeOpenCode server URL used only by the mediator relay |
 | `AUTH_TIMEOUT` | `5s` | Identity lookup timeout |
 | `RECONCILE_INTERVAL` | `2s` | Task reconciliation interval |
+| `LOG_LEVEL` | `info` | Structured log level: `debug`, `info`, `warn`, or `error` |
+| `LOG_FORMAT` | `json` | Log encoding: `json` for production or `text` for local development |
 | `TASK_TIMEOUT` | `1h` | Maximum automated Task duration |
 | `SNAPSHOT_IMAGE` | `alpine:3.22` | Snapshot/restore Job image |
 | `CLEANUP_TOKEN_FILE` | unset | Enables the internal user-cleanup endpoint with a token read from a mounted Secret |
@@ -96,10 +98,14 @@ make agent-mtls-image \
 ```
 
 The files are BuildKit secret mounts used only while compiling the static
-proxy. The resulting binary contains the client key and is therefore itself a
-secret-bearing artifact: restrict registry pulls, sign the image, use immutable
-digests, rotate the certificate by rebuilding, and configure the gateway to
-require and authorize the client certificate. The proxy binds only to
+proxy. The build encrypts them with a fresh AES-256-GCM key before linker
+injection, so PEM blocks and certificate text are not visible with a text
+editor or a basic `strings` scan. The decryption key is necessarily present in
+the binary: this is obfuscation against casual inspection, not protection from
+reverse engineering. The resulting binary remains a secret-bearing artifact:
+restrict registry pulls, sign the image, use immutable digests, rotate the
+certificate by rebuilding, and configure the gateway to require and authorize
+the client certificate. The proxy binds only to
 `127.0.0.1:9443`; OpenCode is automatically pointed at that local endpoint.
 Session sharing, automatic updates, AI SDK OpenTelemetry, and remote model
 catalog downloads are disabled. Automatic context compaction and pruning remain

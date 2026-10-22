@@ -2,9 +2,15 @@
 
 ## Health and observability
 
-The mediator exposes `GET /healthz` for liveness/readiness. A successful probe
-means the process is serving, not that JupyterHub, Kubernetes, storage, the model
-gateway, or KubeOpenCode are healthy. Monitor those dependencies separately.
+The mediator exposes `GET /livez` for process liveness and `GET /readyz` for
+readiness after the first reconciliation attempt. The legacy `GET /healthz`
+remains a liveness alias. Readiness deliberately does not depend on JupyterHub,
+storage, the model gateway, or KubeOpenCode, which must be monitored separately.
+
+`GET /metrics` exposes bounded Prometheus metrics without user, workspace,
+request-path, prompt, or credential labels. Production logs are JSON by default;
+set `LOG_LEVEL` to `debug`, `info`, `warn`, or `error`, and `LOG_FORMAT` to `json`
+or `text`.
 
 Alert on mediator restarts, 5xx rate, authentication failures, Agent rollout
 timeouts, failed snapshot Jobs, PVC capacity, OOMKills, denied egress, and

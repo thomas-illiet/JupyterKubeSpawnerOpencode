@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"github.com/thomas-illiet/jupyter-kubeopencode/internal/auth"
 	"github.com/thomas-illiet/jupyter-kubeopencode/internal/config"
@@ -11,19 +12,36 @@ import (
 
 // Service exposes the authenticated mediator API and coordinates task reconciliation.
 type Service struct {
-	cfg         config.Config
-	kube        kube.Client
-	auth        auth.Authenticator
-	mux         *http.ServeMux
-	workMu      sync.Map
-	policyReady sync.Map
-	lifecycleMu sync.RWMutex
+	cfg             config.Config
+	kube            kube.Client
+	auth            auth.Authenticator
+	mux             *http.ServeMux
+	workMu          sync.Map
+	policyReady     sync.Map
+	lifecycleMu     sync.RWMutex
+	ready           atomic.Bool
+	requestCount    atomic.Uint64
+	requestInFlight atomic.Int64
+	requestNanos    atomic.Uint64
+	response2xx     atomic.Uint64
+	response3xx     atomic.Uint64
+	response4xx     atomic.Uint64
+	response5xx     atomic.Uint64
 }
 
 // NewService constructs an HTTP service and registers all API routes.
 func NewService(cfg config.Config, client kube.Client, authenticator auth.Authenticator) *Service {
+	if cfg.WorkspacesByOwner == nil {
+		cfg.WorkspacesByOwner = make(map[string]config.Workspace, len(cfg.Workspaces))
+		for _, workspace := range cfg.Workspaces {
+			cfg.WorkspacesByOwner[workspace.Owner] = workspace
+		}
+	}
 	s := &Service{cfg: cfg, kube: client, auth: authenticator, mux: http.NewServeMux()}
-	s.mux.HandleFunc("GET /healthz", s.health)
+	s.mux.HandleFunc("GET /healthz", s.liveness)
+	s.mux.HandleFunc("GET /livez", s.liveness)
+	s.mux.HandleFunc("GET /readyz", s.readiness)
+	s.mux.HandleFunc("GET /metrics", s.metrics)
 	s.mux.HandleFunc("DELETE /api/v1/admin/users/{user}/resources", s.deleteUserResources)
 	s.mux.HandleFunc("POST /api/v1/workspaces/{workspace}/tasks", s.createTask)
 	s.mux.HandleFunc("GET /api/v1/workspaces/{workspace}/agent", s.getAgentConfig)

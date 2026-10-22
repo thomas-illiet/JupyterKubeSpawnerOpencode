@@ -1,21 +1,15 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/thomas-illiet/jupyter-kubeopencode/internal/api"
-	"github.com/thomas-illiet/jupyter-kubeopencode/internal/auth"
+	"github.com/thomas-illiet/jupyter-kubeopencode/internal/app"
 	"github.com/thomas-illiet/jupyter-kubeopencode/internal/config"
-	"github.com/thomas-illiet/jupyter-kubeopencode/internal/kube"
+	"github.com/thomas-illiet/jupyter-kubeopencode/internal/version"
 )
 
 // main executes the mediator command and reports startup failures.
@@ -50,6 +44,9 @@ func newRootCommand() *cobra.Command {
 	flags.String("agent-memory-limit", "4Gi", "Agent memory limit")
 	flags.String("agent-ephemeral-storage-limit", "4Gi", "Agent ephemeral storage limit")
 	flags.String("cleanup-token-file", "", "file containing the administrative cleanup token")
+	flags.String("log-level", "info", "log level: debug, info, warn, or error")
+	flags.String("log-format", "json", "log format: json or text")
+	command.Version, _, _ = version.Info()
 	bindErr := v.BindPFlags(flags)
 	command.RunE = func(cmd *cobra.Command, _ []string) error {
 		if bindErr != nil {
@@ -59,36 +56,7 @@ func newRootCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return run(cmd.Context(), cfg)
+		return app.Run(cmd.Context(), cfg)
 	}
 	return command
-}
-
-// run starts the reconciliation loop and HTTP server until shutdown.
-func run(parent context.Context, cfg config.Config) error {
-	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	client, err := kube.NewClient(cfg)
-	if err != nil {
-		return fmt.Errorf("create Kubernetes client: %w", err)
-	}
-	service := api.NewService(cfg, client, auth.NewJupyterHub(cfg.JupyterHubUserURL, cfg.AuthTimeout))
-	go service.Run(ctx)
-
-	server := &http.Server{Addr: cfg.ListenAddress, Handler: service.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 65 * time.Second}
-	go shutdownServer(ctx, server)
-	slog.Info("mediator listening", "address", cfg.ListenAddress)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
-}
-
-// shutdownServer gracefully stops the HTTP server after context cancellation.
-func shutdownServer(ctx context.Context, server *http.Server) {
-	<-ctx.Done()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = server.Shutdown(shutdownCtx)
 }

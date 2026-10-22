@@ -81,7 +81,7 @@ func (s *Service) createAgentConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request model.AgentConfig
-	if err := decodeJSON(r, &request); err != nil || !validAgentID(request.ID) || request.ID == "default" {
+	if err := decodeJSON(w, r, &request); err != nil || !validAgentID(request.ID) || request.ID == "default" {
 		problem(w, http.StatusBadRequest, "invalid_request", "A unique lowercase Agent id is required")
 		return
 	}
@@ -111,7 +111,7 @@ func (s *Service) updateAgentConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request model.AgentConfig
-	if err := decodeJSON(r, &request); err != nil {
+	if err := decodeJSON(w, r, &request); err != nil {
 		problem(w, http.StatusBadRequest, "invalid_request", "Invalid agent configuration")
 		return
 	}

@@ -75,6 +75,30 @@ func TestValidateWorkspaceModelMTLSRequiresHTTPSAndExecutorImage(t *testing.T) {
 	}
 }
 
+func TestValidateWorkspaceRejectsCredentialedOrAmbiguousURLs(t *testing.T) {
+	for _, value := range []string{
+		"https://user:secret@gateway.example",
+		"https://gateway.example/path?token=secret",
+		"https://gateway.example/path#fragment",
+		"https://",
+	} {
+		workspace := validTestWorkspace()
+		workspace.ModelProxyURL = value
+		if err := validateWorkspace(workspace); err == nil {
+			t.Errorf("expected modelProxyUrl %q to be rejected", value)
+		}
+	}
+}
+
+func FuzzValidHTTPURL(f *testing.F) {
+	f.Add("https://gateway.example/v1")
+	f.Add("https://user:secret@gateway.example")
+	f.Add("not-a-url")
+	f.Fuzz(func(t *testing.T, value string) {
+		_ = validHTTPURL(value)
+	})
+}
+
 func validTestWorkspace() Workspace {
 	return Workspace{ID: "alice", Owner: "alice", Namespace: "users", PVC: "claim", SnapshotPVC: "snapshots", SubPath: "work/project", ModelSecret: "model", ModelSecretKey: "key", ModelEnvironment: "OPENAI_API_KEY", Registry: "platform", RequiredSkills: []string{"platform-baseline"}}
 }
