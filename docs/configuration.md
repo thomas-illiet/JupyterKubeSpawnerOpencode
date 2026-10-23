@@ -30,12 +30,17 @@ subpath, model policy, and runtime identity. Multiple entries may use the same
 namespace, but each owner must occur exactly once. Requests cannot override
 these fields.
 
-Model access uses one of two modes:
+Model access supports two administrator-controlled mechanisms. At least one
+complete mechanism is required, and the current validation permits both:
 
 - `modelSecret`, `modelSecretKey`, and `modelEnvironment` reference an existing
   Secret in the user namespace; or
 - `openCodeBaseUrl` and `openCodeModel` route through an internal compatible
-  gateway. `allowedModels` controls the extension selection.
+  gateway. `allowedModels` controls extension/OpenCode selection but is not a
+  network or gateway authorization policy.
+
+`modelMTLS` optionally changes the gateway path to use the embedded client
+identity described in [Model gateway mTLS](model-gateway-mtls.md).
 
 `subPath` must be relative and cannot contain `..`. The snapshot PVC must be
 separate from the workspace PVC so the Agent cannot modify its rollback point.
@@ -86,8 +91,19 @@ Every Agent enables only the administrator-defined `model-proxy` provider.
 ### Embedded mTLS model client
 
 Set `modelMTLS: true`, use an HTTPS `openCodeBaseUrl`, and set `executorImage`
-to an image built from `Dockerfile.agent-mtls`. Build it without placing PEM
-files in the Docker context:
+to an image built from `Dockerfile.agent-mtls`. The optional Task API attaches
+to the persistent Agent for model execution, so its `attachImage` does not need
+the proxy or embedded certificate.
+
+| Field | mTLS behavior |
+| --- | --- |
+| `openCodeBaseUrl` | Fixed remote HTTPS gateway; supplied to the proxy as `MODEL_MTLS_UPSTREAM` |
+| `modelMTLS` | Rewrites the OpenCode provider base URL to `http://127.0.0.1:9443` and installs the startup hook |
+| `executorImage` | Must contain `jko-model-mtls-proxy`; verify its embedded identity by the certificate fingerprint observed at the gateway, not by digest alone |
+| `attachImage` | Task-side attach client image; keep it credential-free because model execution remains in the persistent Agent |
+| `modelProxyUrl` | OpenCode's general proxy setting; it does not transport the dedicated mTLS hop, whose Go transport connects directly |
+
+Build without placing PEM files in the Docker context:
 
 ```sh
 make agent-mtls-image \
@@ -98,15 +114,13 @@ make agent-mtls-image \
 ```
 
 The files are BuildKit secret mounts used only while compiling the static
-proxy. The build encrypts them with a fresh AES-256-GCM key before linker
-injection, so PEM blocks and certificate text are not visible with a text
-editor or a basic `strings` scan. The decryption key is necessarily present in
-the binary: this is obfuscation against casual inspection, not protection from
-reverse engineering. The resulting binary remains a secret-bearing artifact:
-restrict registry pulls, sign the image, use immutable digests, rotate the
-certificate by rebuilding, and configure the gateway to require and authorize
-the client certificate. The proxy binds only to
-`127.0.0.1:9443`; OpenCode is automatically pointed at that local endpoint.
+proxy. The proxy binds only to `127.0.0.1:9443`; OpenCode is automatically
+pointed at that local endpoint. The resulting image is a secret-bearing artifact
+and BuildKit secret changes do not invalidate its cache automatically. Use an
+immutable digest, force the packing step during rotation, and follow the build,
+gateway-policy, Task, rotation, and incident procedures in
+[Model gateway mTLS](model-gateway-mtls.md).
+
 Session sharing, automatic updates, AI SDK OpenTelemetry, and remote model
 catalog downloads are disabled. Automatic context compaction and pruning remain
 enabled to bound memory and context growth.

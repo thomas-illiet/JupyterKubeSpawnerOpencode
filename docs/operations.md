@@ -14,8 +14,14 @@ or `text`.
 
 Alert on mediator restarts, 5xx rate, authentication failures, Agent rollout
 timeouts, failed snapshot Jobs, PVC capacity, OOMKills, denied egress, and
-KubeOpenCode controller/server availability. Keep logs free of payloads and
-credentials.
+KubeOpenCode controller/server availability. For mTLS workspaces, also monitor
+certificate expiry/revocation, gateway client-auth failures, local connection
+refusals, generic proxy 502s, and a real model health transaction. Keep logs free
+of payloads and credentials.
+
+The Agent `postStart` hook backgrounds `jko-model-mtls-proxy`; the existing
+Agent readiness probe does not supervise it. An Agent can remain Ready after the
+proxy exits.
 
 ## Upgrade procedure
 
@@ -41,6 +47,24 @@ disaster-recovery backup system.
 Model credentials should be recoverable from the organization's secret manager,
 not from cluster YAML exports.
 
+## mTLS certificate lifecycle
+
+The mTLS client certificate, private key, and gateway CA are fixed inside the
+executor binary. Rotation is an image rollout, not a Kubernetes Secret update:
+
+1. Issue the new material and force a no-cache image build.
+2. Publish and sign a new immutable digest.
+3. Update `executorImage`; keep the Task `attachImage` credential-free.
+4. Wait for the complete Agent rollout and verify the new fingerprint at the
+   gateway.
+5. Revoke the old certificate, block the old digest, and terminate remaining
+   pods or connections that use it.
+
+If an image is disclosed, immediately revoke its certificate at the gateway.
+Deleting a runtime Secret has no effect on the embedded key. Follow the detailed
+CA-rotation and compromise procedure in
+[Model gateway mTLS](model-gateway-mtls.md#rotation-and-compromise-response).
+
 ## Troubleshooting
 
 ### `local port 4096 is already in use`
@@ -63,9 +87,23 @@ troubleshooting the HTTP/SSE/WebSocket relay.
 
 ### Agent cannot reach a model
 
-Check the model gateway Service, namespace labels, egress NetworkPolicy, CA
-bundle and provider configuration. Do not temporarily allow unrestricted
-Internet egress in production.
+Check the model gateway Service, namespace labels, egress NetworkPolicy, and
+provider configuration. Do not temporarily allow unrestricted Internet egress
+in production.
+
+For an mTLS workspace, a connection refusal on `127.0.0.1:9443` means the local
+proxy is not listening. A generic HTTP 502 means the proxy is alive but its
+upstream DNS/routing/TLS connection or gateway response failed. Inspect the
+sanitized `/tmp/model-mtls-proxy.log` and gateway-side TLS authentication logs;
+the backgrounded hook can fail after returning success, so do not rely on a
+`FailedPostStartHook` event. Confirm that only loopback is listening on port 9443
+and that the deployed executor image digest is expected. Never print the private
+key or full credential bundle while troubleshooting.
+
+If the Agent is Ready while this check fails, treat it as a proxy-health failure;
+readiness does not cover the mTLS process. If direct gateway access succeeds
+without a client certificate, fix the gateway policy rather than relying on the
+Agent's local proxy or NetworkPolicy.
 
 ### PVC multi-attach error
 

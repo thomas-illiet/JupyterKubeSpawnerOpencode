@@ -21,6 +21,12 @@ Do not place credentials in values. Use existing Secrets referenced by
 The shared namespace's existing `default` ServiceAccount must have
 `automountServiceAccountToken: false` for KubeOpenCode 0.1.9 Agent pods.
 
+For `modelMTLS`, only the persistent Agent executor image needs the client
+identity. KubeOpenCode v0.1.9 `agentRef` Task pods attach to that Agent for model
+execution; do not copy the certificate into `attachImage` solely because those
+pods inherit the Agent lifecycle hook. Follow the
+[model gateway mTLS guide](../../docs/model-gateway-mtls.md).
+
 Set `cleanup.enabled=true` and `cleanup.existingSecret` to expose the internal
 user-cleanup endpoint to a trusted JupyterHub Authenticator hook. The Secret is
 mounted as a file and must contain a random token of at least 32 characters.

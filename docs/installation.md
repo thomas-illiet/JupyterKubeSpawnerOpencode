@@ -10,8 +10,12 @@
 - Workspace and snapshot PVCs. Prefer `ReadWriteMany`; validate CSI semantics
   and same-node placement before accepting `ReadWriteOnce`.
 - An internal OpenAI-compatible model gateway, or per-user/team model Secrets.
-- A private registry containing the mediator and code-server images by immutable
-  digest.
+- For `modelMTLS`: a platform PKI, a TLS 1.3 gateway that requires client
+  certificates and applies certificate-specific model/quota policy, and an
+  explicit decision on shared versus per-workspace certificate identity.
+- A private registry containing the mediator, code-server and optional mTLS
+  executor images by immutable digest. Access to an mTLS image is access to a
+  recoverable client identity.
 
 Install the pinned upstream chart:
 
@@ -36,6 +40,24 @@ Build the code-server image from `demo/Dockerfile.code-server` only as a
 reference. Production platforms should copy the launcher, OpenCode runtime, and
 VSIX stages into their maintained Jupyter image and publish the result by
 digest.
+
+For every distinct model-gateway identity, build and publish the mTLS executor
+separately. Keep the input files outside the repository and Docker context:
+
+```sh
+make agent-mtls-image \
+  MTLS_CLIENT_CERT=/secure/workspace/client.crt \
+  MTLS_CLIENT_KEY=/secure/workspace/client.key \
+  MTLS_GATEWAY_CA=/secure/gateway/ca.crt \
+  MTLS_AGENT_IMAGE=REGISTRY/jko-agent-mtls:VERSION
+docker push REGISTRY/jko-agent-mtls:VERSION
+docker inspect --format '{{index .RepoDigests 0}}' REGISTRY/jko-agent-mtls:VERSION
+```
+
+BuildKit does not include secret contents in its cache key. During certificate
+rotation, force a no-cache rebuild (or an equivalent verified cache-busting
+build), then prove the new fingerprint at the gateway before revoking the old
+certificate. See [Model gateway mTLS](model-gateway-mtls.md).
 
 ## 3. Prepare each user workspace
 
@@ -79,9 +101,17 @@ Populate the authoritative `workspaces` list and set:
 - namespace names for DNS, JupyterHub and the model gateway, plus the internal
   KubeOpenCode server URL;
 - resource limits and an optional runtime class such as gVisor or Kata.
+- for an mTLS workspace, the HTTPS gateway URL plus an immutable `executorImage`
+  carrying the intended certificate identity; keep `attachImage` credential-free
+  because Task model execution remains in the persistent Agent.
 
 Never place model keys, Git credentials, Jupyter tokens, or kubeconfigs in Helm
 values.
+
+Before installation, configure the model gateway to reject requests without an
+accepted client certificate and to authorize the exact certificate identity.
+NetworkPolicy only permits reachability to the gateway namespace; it does not
+select a single gateway pod/port or enforce TLS.
 
 Render and inspect before applying:
 
@@ -120,4 +150,6 @@ VS Code settings, the PVC, logs, or command-line arguments.
 
 Run every item in `docs/acceptance.md` with two real OIDC identities. Retain the
 rendered manifests, image digests, test output, and cluster policy evidence with
-the release record.
+the release record. When mTLS is enabled, retain the gateway-observed client
+fingerprint, negative certificate tests, rotation proof, and the declared
+identity-sharing scope as well.

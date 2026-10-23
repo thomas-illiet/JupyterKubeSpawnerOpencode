@@ -10,3 +10,7 @@ charts
 docs
 examples
 
+# mTLS credentials must enter builds only through BuildKit secret mounts.
+cmd/model-mtls-proxy/certs/**
+!cmd/model-mtls-proxy/certs/README.md
+

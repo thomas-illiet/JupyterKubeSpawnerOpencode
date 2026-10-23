@@ -23,3 +23,6 @@ This project supports shared user namespaces only when Jupyter pods have no
 Kubernetes credentials and all access is mediated. It also requires an
 OIDC-backed JupyterHub identity, NetworkPolicy enforcement, and an administrator
 owned workspace allowlist. See `docs/security.md` for the complete threat model.
+The optional embedded model-gateway client identity is recoverable from its
+executor image and must not be described as a non-exportable workload identity;
+see `docs/model-gateway-mtls.md` for its exact guarantees and limitations.

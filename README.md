@@ -6,8 +6,12 @@ and OpenCode as pinned runtime dependencies.
 
 The VS Code extension is a configuration surface only. Interactive work starts
 from the integrated terminal with `opencloud`, through an authenticated mediator
-relay. Users never receive mediator credentials,
-model tokens, unrestricted Kubernetes access, or access to another workspace.
+relay. The extension and mediator request body never carry model credentials,
+and users receive no mediator credentials, unrestricted Kubernetes access, or
+access to another workspace. A token-backed credential is still available to
+the Agent workload that consumes its Secret. The optional mTLS executor image is
+likewise a secret-bearing artifact: its embedded client identity is obfuscated,
+but remains recoverable and usable by processes in the Agent pod.
 
 ![Architecture](docs/images/architecture.svg)
 
@@ -26,6 +30,9 @@ model tokens, unrestricted Kubernetes access, or access to another workspace.
 - An authenticated JupyterHub user-deletion hook that removes the user's
   mediator-owned KubeOpenCode resources while preserving external PVCs and
   Secrets for the platform's data-retention workflow.
+- An optional loopback model proxy that presents an embedded client certificate
+  to an internal gateway over TLS 1.3, with explicit identity, rotation, and
+  non-exportability limitations.
 - A reproducible Docker Desktop demonstration and an OpenAPI contract.
 
 ## Quick start
@@ -54,6 +61,7 @@ the repository before adapting it.
 | [Installation](docs/installation.md) | Production prerequisites and ordered deployment procedure |
 | [Configuration](docs/configuration.md) | Helm values, workspace mapping, extension and terminal variables |
 | [Security](docs/security.md) | Trust boundaries, threat model, RBAC, secrets, storage and network controls |
+| [Model gateway mTLS](docs/model-gateway-mtls.md) | Certificate build/runtime flow, identity scope, gateway contract, rotation and failure modes |
 | [Operations](docs/operations.md) | Health, upgrades, rollback, backup, troubleshooting and limitations |
 | [Development](docs/development.md) | Reproducible toolchain, commands, tests, images and release checklist |
 | [Acceptance](docs/acceptance.md) | Cluster-level multi-user verification checklist |
@@ -81,7 +89,8 @@ make verify
 ```
 
 This runs Go tests and vet, extension type-check/package, Helm lint/template,
-OpenAPI parsing, shell lint when available, and repository hygiene checks.
+documentation artifact/link checks, shell lint when available, and repository
+hygiene checks.
 Cluster isolation still requires the manual tests in
 [docs/acceptance.md](docs/acceptance.md).
 

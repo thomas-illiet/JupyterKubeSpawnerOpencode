@@ -8,6 +8,12 @@ through a mediator. The `opencloud` terminal command selects one owned Agent and
 uses a loopback proxy authenticated with the JupyterHub server token. OpenCode runs in a
 separate, restricted Kubernetes pod that mounts only the authorised workspace.
 
+Two loopback proxies exist on different trust paths. The code-server
+`jko-attach-proxy` adds the JupyterHub credential only toward the mediator. The
+Agent-side `jko-model-mtls-proxy`, when enabled, holds an image-baked client
+identity and authenticates model egress to the gateway. These identities are not
+derived from one another.
+
 The extension deliberately has no Task execution, log streaming, cancellation,
 or restore UI. The mediator retains those APIs for non-interactive automation,
 but they are a separate client surface.
@@ -25,7 +31,8 @@ but they are a separate client surface.
 | JupyterHub user API | Resolve bearer token to canonical username | Identity authority |
 | KubeOpenCode controller/server | Reconcile Agent CRs and proxy interactive connections | Trusted platform |
 | Agent pod | Run OpenCode and commands inside the workspace sandbox | Untrusted workload |
-| Model gateway | Hold/provider-route model access | Trusted egress boundary |
+| Model mTLS proxy | Convert pod-loopback HTTP to direct TLS 1.3 with an embedded client certificate | Secret-bearing process inside the untrusted Agent boundary |
+| Model gateway | External service that must enforce client authentication and model policy | Trusted egress boundary |
 
 ## Interactive sequence
 
@@ -56,8 +63,28 @@ extension ─Bearer token─> mediator ─token introspection─> JupyterHub
 ```
 
 The model credential never traverses the extension or mediator request body.
-The Agent references an administrator-provisioned Kubernetes Secret or an
-internal model gateway configured in the workspace allowlist.
+For token-based access, the Agent references an administrator-provisioned
+Kubernetes Secret. For mTLS gateway access, the executor binary itself contains
+an obfuscated but recoverable client certificate and private key.
+
+## Model request sequence
+
+When `modelMTLS` is disabled, OpenCode uses the administrator-defined model
+endpoint directly. When it is enabled:
+
+1. The mediator writes `http://127.0.0.1:9443` as the OpenCode provider base URL
+   and the fixed HTTPS gateway as `MODEL_MTLS_UPSTREAM`.
+2. A `postStart` hook launches the proxy from the selected executor image.
+3. OpenCode and any other process in the pod can send HTTP to the loopback
+   listener.
+4. The proxy connects directly to the fixed gateway with TLS 1.3, verifies the
+   server hostname/CA, and presents its client certificate.
+5. The external gateway must map that certificate identity to allowed models,
+   routes, quota, and audit policy. The NetworkPolicy supplies reachability only.
+
+The client identity belongs to the image, not automatically to the JupyterHub
+user. See [Model gateway mTLS](model-gateway-mtls.md) for the complete security
+and operational implications.
 
 ## Optional Task API
 
@@ -75,6 +102,7 @@ tested independently; it is not reachable from the extension UI.
 | Skill and plugin catalog | Namespaced KubeOpenCode Registry CR | Platform administrator; mediator read-only |
 | Agent desired state | KubeOpenCode Agent CR | Mediator |
 | Model and private Git credentials | Kubernetes Secret | Platform administrator |
+| Embedded mTLS client identity | Encrypted bundle inside the immutable executor image binary | Platform PKI and image pipeline |
 | Workspace files | User PVC subpath | User |
 | Task snapshots | Separate snapshot PVC | Mediator Jobs |
 
@@ -88,3 +116,7 @@ election and concurrent reconciliation tests exist.
 Agent environment updates are rollout-aware. The launcher verifies the desired
 environment in the Deployment template and waits until old replicas are gone,
 preventing attachment to a stale server pod.
+
+The mTLS proxy is started in the Agent container by a background `postStart`
+hook. It currently has no separate health probe or supervisor, so Agent readiness
+does not imply that model egress is healthy.

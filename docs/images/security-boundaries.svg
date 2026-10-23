@@ -1,13 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
   <title id="title">Jupyter KubeOpenCode security boundaries</title>
-  <desc id="desc">Untrusted user interfaces cross authenticated and authorized control-plane boundaries before reaching a sandboxed Agent and approved services.</desc>
-  <defs><style>.bg{fill:#f8fafc}.box{fill:#fff;stroke-width:3}.u{stroke:#dc2626}.t{stroke:#0891b2}.s{stroke:#7c3aed}.h{font:700 19px system-ui,sans-serif;fill:#0f172a}.p{font:14px system-ui,sans-serif;fill:#334155}.line{stroke:#334155;stroke-width:2;marker-end:url(#a)}.deny{stroke:#dc2626;stroke-dasharray:7 6}.tag{font:700 13px system-ui,sans-serif;fill:#dc2626}</style><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#334155"/></marker></defs>
-  <rect class="bg" width="1200" height="500" rx="18"/>
-  <rect class="box u" x="45" y="105" width="260" height="220" rx="15"/><text class="h" x="175" y="145" text-anchor="middle">Untrusted user zone</text><text class="p" x="175" y="182" text-anchor="middle">browser · extension · terminal</text><text class="p" x="175" y="210" text-anchor="middle">workspace · prompts · skills</text><text class="p" x="175" y="260" text-anchor="middle">No model secret</text><text class="p" x="175" y="286" text-anchor="middle">No CRD mutation</text>
-  <rect class="box t" x="430" y="105" width="320" height="220" rx="15"/><text class="h" x="590" y="145" text-anchor="middle">Trusted control plane</text><text class="p" x="590" y="182" text-anchor="middle">JupyterHub identity validation</text><text class="p" x="590" y="210" text-anchor="middle">workspace + Registry allowlists</text><text class="p" x="590" y="238" text-anchor="middle">mandatory skill enforcement</text><text class="p" x="590" y="276" text-anchor="middle">namespace-scoped RBAC</text><text class="p" x="590" y="302" text-anchor="middle">default-deny NetworkPolicy</text>
-  <rect class="box s" x="875" y="105" width="280" height="220" rx="15"/><text class="h" x="1015" y="145" text-anchor="middle">Sandboxed execution</text><text class="p" x="1015" y="182" text-anchor="middle">non-root · seccomp</text><text class="p" x="1015" y="210" text-anchor="middle">read-only root · bounded tmp</text><text class="p" x="1015" y="238" text-anchor="middle">one PVC subpath</text><text class="p" x="1015" y="276" text-anchor="middle">DNS + model gateway only</text><text class="p" x="1015" y="302" text-anchor="middle">zero-permission ServiceAccount</text>
-  <line class="line" x1="305" y1="185" x2="430" y2="185"/><text class="p" x="368" y="170" text-anchor="middle">Bearer auth</text>
-  <line class="line" x1="750" y1="185" x2="875" y2="185"/><text class="p" x="812" y="170" text-anchor="middle">validated CR</text>
-  <line class="line deny" x1="305" y1="285" x2="875" y2="285"/><text class="tag" x="590" y="360" text-anchor="middle">DENIED: arbitrary PVC · Kubernetes API · Secrets · host mounts · unrestricted egress</text>
-  <text class="p" x="600" y="430" text-anchor="middle">Administrative prerequisites: no user Kubernetes token · Pod Security restricted · encrypted Secrets · audited cluster</text>
+  <desc id="desc">Untrusted user interfaces cross JupyterHub authentication and mediator authorization before reaching a sandboxed Agent. An optional loopback proxy presents a shared executor-image client certificate to the model gateway; this mTLS identity is separate from the JupyterHub user identity.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f8fafc}.box{fill:#fff;stroke-width:3}.u{stroke:#dc2626}.t{stroke:#0891b2}.s{stroke:#7c3aed}.g{fill:#ecfdf5;stroke:#059669}.w{fill:#fff7ed;stroke:#ea580c}.head{font:700 22px system-ui,sans-serif;fill:#0f172a}.subhead{font:600 14px system-ui,sans-serif;fill:#475569}.h{font:700 18px system-ui,sans-serif;fill:#0f172a}.p{font:14px system-ui,sans-serif;fill:#334155}.small{font:13px system-ui,sans-serif;fill:#475569}.line{stroke:#334155;stroke-width:2;fill:none;marker-end:url(#a)}.mtls{stroke:#059669;stroke-width:3;fill:none;marker-end:url(#green)}.deny{stroke:#dc2626;stroke-width:2.5;stroke-dasharray:7 6}.tag{font:700 13px system-ui,sans-serif;fill:#b91c1c}.ok{font:700 13px system-ui,sans-serif;fill:#047857}.warn{font:700 13px system-ui,sans-serif;fill:#c2410c}
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#334155"/></marker>
+    <marker id="green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#059669"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="620" rx="18"/>
+  <text class="head" x="600" y="40" text-anchor="middle">Identity and trust boundaries</text>
+  <text class="subhead" x="600" y="67" text-anchor="middle">JupyterHub identity controls workspace access; mTLS separately authenticates an executor-image credential to the model gateway.</text>
+
+  <rect class="box u" x="45" y="105" width="260" height="240" rx="15"/>
+  <text class="h" x="175" y="143" text-anchor="middle">Untrusted user zone</text>
+  <text class="p" x="175" y="178" text-anchor="middle">browser · extension · terminal</text>
+  <text class="p" x="175" y="206" text-anchor="middle">workspace · prompts · skills</text>
+  <text class="p" x="175" y="252" text-anchor="middle">No raw provider token in UI/PVC</text>
+  <text class="p" x="175" y="280" text-anchor="middle">No CRD mutation</text>
+  <text class="p" x="175" y="308" text-anchor="middle">No Kubernetes credential</text>
+
+  <rect class="box t" x="430" y="105" width="320" height="240" rx="15"/>
+  <text class="h" x="590" y="143" text-anchor="middle">Trusted control plane</text>
+  <text class="p" x="590" y="178" text-anchor="middle">JupyterHub identity validation</text>
+  <text class="p" x="590" y="206" text-anchor="middle">workspace + Registry allowlists</text>
+  <text class="p" x="590" y="234" text-anchor="middle">mandatory skill enforcement</text>
+  <text class="p" x="590" y="280" text-anchor="middle">namespace-scoped RBAC</text>
+  <text class="p" x="590" y="308" text-anchor="middle">default-deny NetworkPolicy</text>
+
+  <rect class="box s" x="875" y="105" width="280" height="240" rx="15"/>
+  <text class="h" x="1015" y="143" text-anchor="middle">Sandboxed execution</text>
+  <text class="p" x="1015" y="178" text-anchor="middle">user-controlled Agent workload</text>
+  <text class="p" x="1015" y="206" text-anchor="middle">non-root · seccomp · bounded tmp</text>
+  <text class="p" x="1015" y="234" text-anchor="middle">one PVC subpath · no K8s token</text>
+  <text class="p" x="1015" y="280" text-anchor="middle">loopback mTLS proxy :9443</text>
+  <text class="p" x="1015" y="308" text-anchor="middle">shared secret-bearing image</text>
+
+  <path class="line" d="M305 185 H430"/><text class="p" x="368" y="169" text-anchor="middle">Bearer auth</text>
+  <path class="line" d="M750 185 H875"/><text class="p" x="812" y="169" text-anchor="middle">validated CR</text>
+
+  <path class="deny" d="M305 365 H875"/>
+  <path d="M590 353 l12 12 -12 12 -12 -12z" fill="#dc2626"/>
+  <text class="tag" x="590" y="399" text-anchor="middle">DENIED: arbitrary PVC · Kubernetes API · Secrets · host mounts · unrestricted egress</text>
+
+  <rect class="box w" x="45" y="430" width="705" height="110" rx="15"/>
+  <text class="warn" x="397" y="460" text-anchor="middle">mTLS LIMIT</text>
+  <text class="p" x="397" y="489" text-anchor="middle">The certificate proves possession of the key embedded in the executor image.</text>
+  <text class="p" x="397" y="516" text-anchor="middle">It does not prove a JupyterHub user, workspace or pod; the binary can be copied and reverse engineered.</text>
+
+  <path class="mtls" d="M1015 345 V415"/>
+  <text class="ok" x="1030" y="385">TLS 1.3 mTLS</text>
+  <rect class="box g" x="875" y="415" width="280" height="125" rx="15"/>
+  <text class="h" x="1015" y="449" text-anchor="middle">External model gateway</text>
+  <text class="p" x="1015" y="477" text-anchor="middle">server certificate verified</text>
+  <text class="p" x="1015" y="503" text-anchor="middle">must require client certificate</text>
+  <text class="p" x="1015" y="529" text-anchor="middle">must enforce model / quota policy</text>
+
+  <text class="small" x="600" y="585" text-anchor="middle">Administrative prerequisites: restricted Pod Security · encrypted Secrets · protected image registry · certificate rotation · audited gateway</text>
 </svg>

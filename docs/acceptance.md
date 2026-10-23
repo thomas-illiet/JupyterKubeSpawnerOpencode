@@ -46,7 +46,40 @@ release. A production approval requires every mandatory item to pass.
   PVC, JupyterHub token, kubeconfig, or general platform Secrets.
 - [ ] The Agent cannot contact the Kubernetes API, another user namespace, or
   an unapproved Internet destination.
-- [ ] Model traffic traverses the approved gateway and validates TLS.
+- [ ] Model traffic traverses the approved gateway; the NetworkPolicy's actual
+  namespace and port scope matches the retained rendered manifest.
+
+## Model gateway mTLS
+
+These items are mandatory for every workspace with `modelMTLS: true`:
+
+- [ ] The release record declares whether the client identity is per platform,
+  team, workspace, or user. Gateway-observed certificate fingerprints, rather
+  than image digests alone, prove whether two workspaces share an identity.
+- [ ] OpenCode is configured for `http://127.0.0.1:9443`, while
+  `MODEL_MTLS_UPSTREAM` is the administrator-owned HTTPS gateway URL.
+- [ ] The proxy listens only on loopback; another pod cannot reach port 9443.
+- [ ] The gateway observes the expected client certificate identity and rejects
+  a missing, expired, revoked, or untrusted client certificate.
+- [ ] The proxy rejects a gateway with the wrong CA or hostname/SAN and refuses
+  TLS below 1.3.
+- [ ] A direct Agent-to-gateway connection without a client certificate is
+  rejected even though the NetworkPolicy route exists.
+- [ ] A user command in the Agent can reach the loopback proxy, as expected, but
+  gateway policy still denies unauthorized models, routes, and quota. The test
+  does not treat `allowedModels` as an authorization boundary.
+- [ ] Gateway audit evidence records the certificate identity without prompts,
+  request bodies, bearer tokens, or private key material.
+- [ ] The final binary contains no PEM blocks or known certificate-subject text
+  in a basic `strings` scan, while the release record still classifies the binary
+  and image as recoverable secret-bearing artifacts.
+- [ ] Killing or breaking the local proxy produces a detected model-health alert;
+  Agent readiness alone is not accepted as proof of model availability.
+- [ ] A forced no-cache rotation deploys the new image digest and fingerprint,
+  then the gateway rejects the old certificate.
+- [ ] If the Task API is enabled, an `agentRef` Task succeeds with a
+  credential-free `attachImage`; the gateway observes model traffic under the
+  persistent Agent's certificate, not a duplicated Task-pod identity.
 
 ## Storage and concurrency
 

@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Build-time and runtime model gateway mTLS flow</title>
+  <desc id="desc">The build lane shows PKI files entering the executor image only through BuildKit secrets before an obfuscated credential bundle is linked into the model proxy. The runtime lane shows OpenCode calling a loopback proxy, which authenticates to the model gateway with TLS 1.3 and a shared client certificate. The diagram distinguishes transport guarantees from the limits of an exportable image identity.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f8fafc}.lane{fill:#fff;stroke:#cbd5e1;stroke-width:2}.source{fill:#eff6ff;stroke:#2563eb;stroke-width:2}.build{fill:#ecfeff;stroke:#0891b2;stroke-width:2}.artifact{fill:#f5f3ff;stroke:#7c3aed;stroke-width:2}.untrusted{fill:#fff1f2;stroke:#e11d48;stroke-width:2}.allowed{fill:#ecfdf5;stroke:#059669;stroke-width:2}.warnbox{fill:#fff7ed;stroke:#ea580c;stroke-width:2}.head{font:700 25px system-ui,sans-serif;fill:#0f172a}.subhead{font:600 15px system-ui,sans-serif;fill:#475569}.lanehead{font:700 17px system-ui,sans-serif;fill:#334155}.label{font:700 17px system-ui,sans-serif;fill:#0f172a}.body{font:14px system-ui,sans-serif;fill:#475569}.small{font:13px system-ui,sans-serif;fill:#475569}.tiny{font:12px system-ui,sans-serif;fill:#64748b}.flow{stroke:#334155;stroke-width:2.5;fill:none;marker-end:url(#arrow)}.secure{stroke:#059669;stroke-width:3;fill:none;marker-end:url(#arrowGreen)}.deny{stroke:#dc2626;stroke-width:2.5;stroke-dasharray:8 6;fill:none}.buildline{stroke:#0891b2;stroke-width:2.5;fill:none;marker-end:url(#arrowCyan)}.good{font:700 13px system-ui,sans-serif;fill:#047857}.danger{font:700 13px system-ui,sans-serif;fill:#b91c1c}.warning{font:700 13px system-ui,sans-serif;fill:#c2410c}.badge{fill:#0f172a}.badgeText{font:700 13px system-ui,sans-serif;fill:#fff}
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#334155"/></marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#059669"/></marker>
+    <marker id="arrowCyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#0891b2"/></marker>
+  </defs>
+
+  <rect class="bg" width="1600" height="980" rx="22"/>
+  <text class="head" x="800" y="44" text-anchor="middle">Model gateway mTLS: supply chain and runtime boundary</text>
+  <text class="subhead" x="800" y="72" text-anchor="middle">The certificate authenticates a shared executor-image credential, not the JupyterHub user, workspace or pod.</text>
+
+  <rect class="lane" x="35" y="100" width="1530" height="300" rx="20"/>
+  <text class="lanehead" x="65" y="135">BUILD LANE — trusted release environment</text>
+
+  <rect class="source" x="70" y="160" width="250" height="140" rx="14"/>
+  <circle class="badge" cx="98" cy="188" r="15"/><text class="badgeText" x="98" y="193" text-anchor="middle">1</text>
+  <text class="label" x="195" y="198" text-anchor="middle">PKI inputs</text>
+  <text class="body" x="195" y="230" text-anchor="middle">client.crt + client.key</text>
+  <text class="body" x="195" y="256" text-anchor="middle">gateway-ca.crt</text>
+  <text class="body" x="195" y="282" text-anchor="middle">kept outside Docker context</text>
+
+  <rect class="build" x="400" y="145" width="310" height="170" rx="14"/>
+  <circle class="badge" cx="428" cy="173" r="15"/><text class="badgeText" x="428" y="178" text-anchor="middle">2</text>
+  <text class="label" x="570" y="185" text-anchor="middle">BuildKit + credential-packer</text>
+  <text class="body" x="555" y="220" text-anchor="middle">required secret mounts only</text>
+  <text class="body" x="555" y="246" text-anchor="middle">fresh AES-256-GCM key + nonce</text>
+  <text class="body" x="555" y="272" text-anchor="middle">authenticated encrypted bundle</text>
+  <text class="body" x="555" y="298" text-anchor="middle">key + bundle injected by linker</text>
+
+  <rect class="artifact" x="790" y="145" width="310" height="170" rx="14"/>
+  <circle class="badge" cx="818" cy="173" r="15"/><text class="badgeText" x="818" y="178" text-anchor="middle">3</text>
+  <text class="label" x="945" y="185" text-anchor="middle">Executor image</text>
+  <text class="body" x="945" y="220" text-anchor="middle">jko-model-mtls-proxy</text>
+  <text class="body" x="945" y="246" text-anchor="middle">no plaintext PEM copied to a layer</text>
+  <text class="body" x="945" y="272" text-anchor="middle">RTK + pinned Agent base</text>
+  <text class="body" x="945" y="298" text-anchor="middle">publish by immutable digest</text>
+
+  <rect class="build" x="1180" y="145" width="330" height="170" rx="14"/>
+  <circle class="badge" cx="1208" cy="173" r="15"/><text class="badgeText" x="1208" y="178" text-anchor="middle">4</text>
+  <text class="label" x="1360" y="185" text-anchor="middle">Restricted release artifact</text>
+  <text class="body" x="1345" y="220" text-anchor="middle">private registry + pull policy</text>
+  <text class="body" x="1345" y="246" text-anchor="middle">signature, scan and provenance</text>
+  <text class="body" x="1345" y="272" text-anchor="middle">record certificate serial / expiry</text>
+  <text class="body" x="1345" y="298" text-anchor="middle">rebuild and roll for rotation</text>
+
+  <path class="buildline" d="M320 230 H400"/><text class="small" x="360" y="214" text-anchor="middle">secret mounts</text>
+  <path class="buildline" d="M710 230 H790"/><text class="small" x="750" y="214" text-anchor="middle">link</text>
+  <path class="buildline" d="M1100 230 H1180"/><text class="small" x="1140" y="214" text-anchor="middle">publish</text>
+
+  <rect class="warnbox" x="70" y="330" width="1440" height="48" rx="12"/>
+  <text class="warning" x="790" y="360" text-anchor="middle">OBFUSCATION ONLY — ciphertext, decryption key and decryptor ship together; treat the binary and image as secret-bearing artifacts.</text>
+
+  <rect class="lane" x="35" y="430" width="1530" height="500" rx="20"/>
+  <text class="lanehead" x="65" y="465">RUNTIME LANE — user-controlled Agent to trusted model gateway</text>
+
+  <rect class="untrusted" x="70" y="500" width="250" height="180" rx="14"/>
+  <circle class="badge" cx="98" cy="528" r="15"/><text class="badgeText" x="98" y="533" text-anchor="middle">1</text>
+  <text class="label" x="220" y="542" text-anchor="middle">OpenCode + Agent tools</text>
+  <text class="body" x="195" y="577" text-anchor="middle">provider baseURL rewritten to</text>
+  <text class="body" x="195" y="603" text-anchor="middle">http://127.0.0.1:9443</text>
+  <text class="body" x="195" y="638" text-anchor="middle">any process in the pod can call</text>
+  <text class="body" x="195" y="664" text-anchor="middle">the local proxy</text>
+
+  <rect class="artifact" x="385" y="485" width="330" height="225" rx="14"/>
+  <circle class="badge" cx="413" cy="513" r="15"/><text class="badgeText" x="413" y="518" text-anchor="middle">2</text>
+  <text class="label" x="565" y="527" text-anchor="middle">jko-model-mtls-proxy</text>
+  <text class="body" x="550" y="562" text-anchor="middle">loopback listener enforced</text>
+  <text class="body" x="550" y="588" text-anchor="middle">fixed administrator HTTPS upstream</text>
+  <text class="body" x="550" y="614" text-anchor="middle">embedded gateway CA trust store</text>
+  <text class="body" x="550" y="640" text-anchor="middle">presents client certificate</text>
+  <text class="body" x="550" y="666" text-anchor="middle">removes X-Forwarded-* headers</text>
+  <text class="body" x="550" y="692" text-anchor="middle">generic upstream failures → HTTP 502</text>
+
+  <rect class="build" x="780" y="485" width="250" height="105" rx="14"/>
+  <circle class="badge" cx="808" cy="513" r="15"/><text class="badgeText" x="808" y="518" text-anchor="middle">3</text>
+  <text class="label" x="920" y="527" text-anchor="middle">NetworkPolicy</text>
+  <text class="body" x="905" y="555" text-anchor="middle">permits gateway namespace</text>
+  <text class="body" x="905" y="578" text-anchor="middle">does not identify one Service</text>
+
+  <rect class="allowed" x="1100" y="485" width="350" height="225" rx="14"/>
+  <circle class="badge" cx="1128" cy="513" r="15"/><text class="badgeText" x="1128" y="518" text-anchor="middle">4</text>
+  <text class="label" x="1290" y="527" text-anchor="middle">Model gateway</text>
+  <text class="body" x="1275" y="562" text-anchor="middle">presents certificate with valid CA + SAN</text>
+  <text class="body" x="1275" y="588" text-anchor="middle">requires a trusted client certificate</text>
+  <text class="body" x="1275" y="614" text-anchor="middle">must map certificate to authorization</text>
+  <text class="body" x="1275" y="640" text-anchor="middle">enforces models, quotas and audit</text>
+  <text class="body" x="1275" y="666" text-anchor="middle">holds provider credentials</text>
+  <text class="body" x="1275" y="692" text-anchor="middle">rejects untrusted direct clients</text>
+
+  <path class="flow" d="M320 595 H385"/>
+  <text class="small" x="352" y="574" text-anchor="middle">HTTP</text>
+  <text class="tiny" x="352" y="620" text-anchor="middle">loopback only</text>
+
+  <path class="secure" d="M715 620 H1100"/>
+  <text class="good" x="907" y="613" text-anchor="middle">TLS 1.3 mTLS · server CA/SAN + client certificate</text>
+
+  <path class="deny" d="M195 680 C410 755 900 755 1275 710"/>
+  <path d="M795 723 l13 13 -13 13 -13 -13z" fill="#dc2626"/>
+  <text class="danger" x="795" y="768" text-anchor="middle">DIRECT CLIENT WITHOUT A TRUSTED CERTIFICATE → GATEWAY MUST REJECT</text>
+
+  <rect class="allowed" x="70" y="790" width="690" height="105" rx="14"/>
+  <text class="good" x="415" y="820" text-anchor="middle">GUARANTEES</text>
+  <text class="body" x="415" y="850" text-anchor="middle">Confidentiality and integrity in transit · gateway certificate verification · proof of client-key possession</text>
+  <text class="body" x="415" y="877" text-anchor="middle">Embedded CA replaces system roots; NetworkPolicy supplies reachability, not identity.</text>
+
+  <rect class="warnbox" x="840" y="790" width="690" height="105" rx="14"/>
+  <text class="warning" x="1185" y="820" text-anchor="middle">LIMITS</text>
+  <text class="body" x="1185" y="850" text-anchor="middle">No JupyterHub-user or pod identity · no non-exportability · no model authorization by itself</text>
+  <text class="body" x="1185" y="877" text-anchor="middle">Every Agent using the same image shares a reusable credential; rotation requires a rebuilt image rollout.</text>
+
+  <text class="tiny" x="800" y="957" text-anchor="middle">Implementation: Dockerfile.agent-mtls · internal/credentialbundle · internal/mtlsproxy/proxy.go · internal/kube/kubernetes.go</text>
+</svg>

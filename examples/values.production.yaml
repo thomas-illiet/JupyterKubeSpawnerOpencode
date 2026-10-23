@@ -48,6 +48,11 @@ registries:
         plugin: { name: "openrtk@0.1.0", target: server }
         metadata: { description: RTK command-output compression; requires RTK in the Agent image, tags: [productivity, tokens] }
 
+# An mTLS executor image carries one exportable gateway client identity. Issue a
+# distinct certificate and publish its immutable image for each intended identity,
+# then prove the distinction with gateway-observed fingerprints. Alice and Bob
+# deliberately use different certificates below. Keep the Task attachImage
+# credential-free: agentRef Tasks execute model requests in the persistent Agent.
 workspaces:
   - id: alice-main
     owner: alice
@@ -59,7 +64,9 @@ workspaces:
     openCodeModel: model-proxy/approved-model
     allowedModels: [model-proxy/approved-model]
     modelMTLS: true
-    executorImage: registry.example.com/platform/jko-agent-mtls:VERSION
+    # Built with Alice's client certificate; replace this tag with its tested digest.
+    executorImage: registry.example.com/platform/jko-agent-mtls-alice:VERSION
+    # General Agent proxy setting only; jko-model-mtls-proxy connects directly.
     modelProxyUrl: http://egress-proxy.model-gateway.svc.cluster.local:3128
     runAsUser: 1000
     runAsGroup: 1000
@@ -78,7 +85,9 @@ workspaces:
     openCodeModel: model-proxy/approved-model
     allowedModels: [model-proxy/approved-model]
     modelMTLS: true
-    executorImage: registry.example.com/platform/jko-agent-mtls:VERSION
+    # Built with Bob's distinct client certificate; replace this tag with its tested digest.
+    executorImage: registry.example.com/platform/jko-agent-mtls-bob:VERSION
+    # General Agent proxy setting only; jko-model-mtls-proxy connects directly.
     modelProxyUrl: http://egress-proxy.model-gateway.svc.cluster.local:3128
     runAsUser: 1001
     runAsGroup: 1001
